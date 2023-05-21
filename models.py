@@ -26,13 +26,13 @@ class NLIModel(ABC):
         return (entails(str1, str2) and entails(str2, str1))
 
 
-
 class DebertaMNLIModel(NLIModel):
     def __init__(self):
         super().__init__("Deberta Large MNLI", "microsoft/deberta-large-mnli")
     
     def entails(self, str1, str2):
-        encoded_input = tokenizer.encode(input, padding=True)
+        nli_input = f"{str1} [SEP] {str2}"
+        encoded_input = tokenizer.encode(nli_input, padding=True)
         prediction = model(torch.tensor(torch.tensor([encoded_input]), device='cuda'))['logits']
         predicted_label = torch.argmax(prediction, dim=1)
         return (predicted_label == 0)
