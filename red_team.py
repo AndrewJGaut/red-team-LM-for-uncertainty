@@ -12,11 +12,28 @@ def main(
     """Train red team model to create prompts which produce uncertain outputs from language model.
     """
     # Parse model classes.
-    language_model = HFLanguageModel(language_model)#.cuda()
-    red_team_model = HFLanguageModel(red_team_model)
-    nli_model = globals()[nli_model]
+    language_model_pt = HFLanguageModel(language_model, 0)
+    red_team_model_pt = HFLanguageModel(red_team_model, 0)
+    nli_model_pt = globals()[nli_model]()
+    semantic_entropy = SemanticEntropy(nli_model_pt)
 
     # TODO...
+    prompts = red_team_model_pt.generate_batch("", 4)
+    orig_logits = language_model_pt.logits(prompts)
+    red_logits = red_team_model_pt.logits(prompts)
+
+    sequences = []
+    log_likelihoods = []
+    for idx, prompt in enumerate(prompts):
+        sequence_tokens = language_model_pt.generate_batch(prompt, 3)
+        sequences.append(language_model_pt.decode(sequence_tokens))
+        sequence_logits = language_model_pt.logits(sequence_tokens)
+        log_likelihoods.append(sequence_logits.sum(-1))
+    log_likelihoods = torch.stack(log_likelihoods)
+    
+    entropy = semantic_entropy.compute(sequences, log_likelihoods)
+    kl = (orig_logits - red_logits).sum() # TODO: Figure this out later
+    print(-entropy + kl)
 
 
 

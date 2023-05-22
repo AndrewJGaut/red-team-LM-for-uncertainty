@@ -15,15 +15,15 @@ class Metric(ABC):
         self.name = name
     
     @abstractmethod
-    def compute(self, generations: List[List[str]], loglikelihoods: torch.Tensor) -> torch.Tensor:
+    def compute(self, generations: List[List[str]], log_likelihoods: torch.Tensor) -> torch.Tensor:
         """Computes the metric score on the inputs
         
         Params:
             generations: Outputs generated from prompts. Generations[i] corresponds to
                 generations for the ith prompt.
                 Len(generations) == batch_size, len(generations[i]) == outputs_per_prompt.
-            loglikelihoods: Float tensor of shape (batch_size, outputs_per_prompt).
-                loglikelihoods[i][j] is the likelihood of the jth sequence in batch i.
+            log_likelihoods: Float tensor of shape (batch_size, outputs_per_prompt).
+                log_likelihoods[i][j] is the likelihood of the jth sequence in batch i.
         """
         pass
 
@@ -55,7 +55,7 @@ class SemanticEntropy(Metric):
         
         return equivalence_classes
     
-    def compute(self, generations, loglikelihoods):
+    def compute(self, generations, log_likelihoods):
         """Compute the Semantic Entropy.
         """
         entropy = torch.zeros(len(generations))
