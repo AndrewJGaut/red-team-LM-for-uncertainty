@@ -1,5 +1,5 @@
-from abc import ABC
-from transformers import AutoModelForSequenceClassification, AutoTokenizer
+from abc import ABC, abstractmethod
+from transformers import AutoModelForSequenceClassification, AutoModelForCausalLM, AutoTokenizer
 
 """Abstract base class"""
 class NLIModel(ABC):
@@ -40,7 +40,7 @@ class DebertaMNLIModel(NLIModel):
 
 class HFLanguageModel():
     def __init__(self, hf_model_str: str) -> None:
-        self.tokenizer = AutoTokenizer(hf_model_str)
+        self.tokenizer = AutoTokenizer.from_pretrained(hf_model_str)
         self.model = AutoModelForCausalLM.from_pretrained(hf_model_str)
 
     def generate_batch(self, num_to_generate):

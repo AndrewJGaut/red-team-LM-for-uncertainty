@@ -12,7 +12,7 @@ def main(
     """Train red team model to create prompts which produce uncertain outputs from language model.
     """
     # Parse model classes.
-    language_model = HFLanguageModel(language_model)
+    language_model = HFLanguageModel(language_model)#.cuda()
     red_team_model = HFLanguageModel(red_team_model)
     nli_model = globals()[nli_model]
 
@@ -20,8 +20,8 @@ def main(
 
 
 
-if __name__ == __main__:
-    parser = argparse.ArgumentParser(
+if __name__ == '__main__':
+    parser = ArgumentParser(
         prog='red_team.py',
         description='Trains a red team language model using RL to product prompts which elicit generations from another language model for which that other model is very uncertain'
     )  
@@ -30,14 +30,14 @@ if __name__ == __main__:
         '--language-model',
         type=str,
         help="Huggingface string for model that is being adversarially attacked by the red team model",
-        default='stabilityai/stablelm-tuned-alpha-3b'
+        default='gpt2',#'stabilityai/stablelm-tuned-alpha-3b'
     )
     parser.add_argument(
         '-rt',
         '--red-team-model',
         type=str,
         help="Huggingface string for red team model",
-        default='stabilityai/stablelm-tuned-alpha-3b'
+        default='gpt2',#'stabilityai/stablelm-tuned-alpha-3b'
     )
     parser.add_argument(
         '-nli',
@@ -47,7 +47,7 @@ if __name__ == __main__:
         default='DebertaMNLIModel'
     )
     # Todo... add more arguments.
-    args = parser.parse_args
+    args = parser.parse_args()
     main(
         args.language_model,
         args.red_team_model,

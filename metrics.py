@@ -1,5 +1,6 @@
 from abc import ABC
 import torch
+import torch_scatter
 from typing import Any, List
 
 from models import *
@@ -57,9 +58,13 @@ class SemanticEntropy(Metric):
     def compute(self, generations, loglikelihoods):
         """Compute the Semantic Entropy.
         """
-        equivalence_classes = [compute_equivalence_classes(gen) for gen in generations]
-        equivalence_classes = torch.LongTensor(equivalence_classes)
-        aggregated_likelihoods = torch_scatter.scatter_logsumexp(
-            log_likelihoods, semantic_set_ids
-        )
-        return aggregated_likelihoods.mean(-1)
+        entropy = torch.zeros(len(generations))
+        for idx, gen in enumerate(generations):
+            equivalence_classes = self.compute_equivalence_classes(gen)
+            equivalence_classes = torch.LongTensor(equivalence_classes)
+            aggregated_likelihoods = torch_scatter.scatter_logsumexp(
+                log_likelihoods, equivalence_classes
+            )
+            entropy[idx] = aggregated_likelihoods.mean()
+        return entropy
+
