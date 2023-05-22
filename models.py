@@ -36,3 +36,12 @@ class DebertaMNLIModel(NLIModel):
         prediction = model(torch.tensor(torch.tensor([encoded_input]), device='cuda'))['logits']
         predicted_label = torch.argmax(prediction, dim=1)
         return (predicted_label == 0)
+
+
+class HFLanguageModel():
+    def __init__(self, hf_model_str: str) -> None:
+        self.tokenizer = AutoTokenizer(hf_model_str)
+        self.model = AutoModelForCausalLM.from_pretrained(hf_model_str)
+
+    def generate_batch(self, num_to_generate):
+        pass
