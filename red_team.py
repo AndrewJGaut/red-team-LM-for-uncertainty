@@ -13,6 +13,7 @@ def main(
     """
     # Parse model classes.
     language_model_pt = HFLanguageModel(language_model, 0)
+    language_model_pt.max_length = 60
     red_team_model_pt = HFLanguageModel(red_team_model, 0)
     nli_model_pt = globals()[nli_model]()
     semantic_entropy = SemanticEntropy(nli_model_pt)
@@ -25,15 +26,17 @@ def main(
     sequences = []
     log_likelihoods = []
     for idx, prompt in enumerate(prompts):
-        sequence_tokens = language_model_pt.generate_batch(prompt, 3)
+        prompt_dec = red_team_model_pt.decode([prompt])[0]
+        sequence_tokens = language_model_pt.generate_batch(prompt_dec, 10)
         sequences.append(language_model_pt.decode(sequence_tokens))
         sequence_logits = language_model_pt.logits(sequence_tokens)
         log_likelihoods.append(sequence_logits.sum(-1))
     log_likelihoods = torch.stack(log_likelihoods)
     
+    #print(sequences, log_likelihoods)
     entropy = semantic_entropy.compute(sequences, log_likelihoods)
-    kl = (orig_logits - red_logits).sum() # TODO: Figure this out later
-    print(-entropy + kl)
+    kl = (orig_logits - red_logits).sum(-1) # TODO: Figure this out later
+    print(entropy, kl, -entropy + kl)
 
 
 

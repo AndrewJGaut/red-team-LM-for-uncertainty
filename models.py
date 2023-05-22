@@ -3,7 +3,7 @@ import torch
 from transformers import AutoModelForSequenceClassification, AutoModelForCausalLM, AutoTokenizer, pipeline
 
 """Abstract base class"""
-class NLIModel(ABC, torch.nn.Module):
+class NLIModel(ABC):
     def __init__(self, name: str, hf_model_str: str) -> None:
         """
         Params:
@@ -11,7 +11,7 @@ class NLIModel(ABC, torch.nn.Module):
             hf_model_str: HuggingFace model string representing model weights on huggingface.
         """
         self.tokenizer = AutoTokenizer.from_pretrained(hf_model_str)
-        self.model = AutoModelForSequenceClassification.from_pretrained(hf_model_str)
+        self.model = AutoModelForSequenceClassification.from_pretrained(hf_model_str).cuda()
 
     @abstractmethod
     def entails(self, str1: str, str2: str) -> bool:
@@ -25,9 +25,6 @@ class NLIModel(ABC, torch.nn.Module):
         """Check if str1 entials str2 and vice versa.
         """
         return (self.entails(str1, str2) and self.entails(str2, str1))
-
-    def forward(self, input):
-        pass
 
 
 class DebertaMNLIModel(NLIModel):
@@ -52,6 +49,7 @@ class HFLanguageModel():
 
     def generate_batch(self, prompt, num_to_generate):
         sequences = self.generator(prompt, max_length=self.max_length, num_return_sequences=num_to_generate, return_tensors=True)
+        #print(prompt, sequences)
         sequences = torch.tensor([sequence['generated_token_ids'] for sequence in sequences], device=self.device)
         return sequences
         # TODO: Make torch Batch object
@@ -60,11 +58,12 @@ class HFLanguageModel():
         #     self.model.generate(max_new_tokens=50, return_dict_in_generate=True, output_scores=True)
 
     def logits(self, sequences):
-        return self.generator.model(sequences).logits
+        return torch.nn.functional.softmax(self.generator.model(sequences).logits, -1).amax(-1)
 
     def decode(self, sequences):
+        #print('23s', sequences)
         return [
-            self.generator.tokenizer.decode(sequence, skip_special_tokens=True)
+            self.generator.tokenizer.decode(sequence, skip_special_tokens=True, clean_up_tokenization_spaces=True)
             for sequence in sequences
         ]
 

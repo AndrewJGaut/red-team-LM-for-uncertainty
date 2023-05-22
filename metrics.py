@@ -29,7 +29,7 @@ class Metric(ABC):
 
 
 class SemanticEntropy(Metric):
-    def __init__(self, nli_model: NLIModel = DebertaMNLIModel()) -> None:
+    def __init__(self, nli_model: NLIModel) -> None:
         """
         Params:
             nli_model: The model to use to check logical entailment of strings.
@@ -46,24 +46,27 @@ class SemanticEntropy(Metric):
         Returns: A list with the same length as inputs. The int at the ith index is
         the integer representing the equivalence class assigned to the ith input.
         """
-        equivalence_classes = [i for i in range(len(inputs))]
+        equivalence_classes = torch.arange(len(inputs)) #[i for i in range(len(inputs))]
         for i in range(len(inputs)):
             for j in range(i, len(inputs)):
                 if self.nli_model.iff(inputs[i], inputs[j]):
                     equivalence_classes[j] = equivalence_classes[i]
                     break
-        
-        return equivalence_classes
+
+        output, inverse_indices = torch.unique(equivalence_classes, return_inverse=True)
+
+        return inverse_indices
     
     def compute(self, generations, log_likelihoods):
         """Compute the Semantic Entropy.
         """
-        entropy = torch.zeros(len(generations))
+        entropy = torch.zeros(len(generations), device=log_likelihoods.device)
         for idx, gen in enumerate(generations):
             equivalence_classes = self.compute_equivalence_classes(gen)
-            equivalence_classes = torch.LongTensor(equivalence_classes)
+            equivalence_classes = torch.tensor(equivalence_classes, device=log_likelihoods.device) # LongTensor(equivalence_classes)
+            print(log_likelihoods.shape, equivalence_classes.shape, log_likelihoods[idx], equivalence_classes)
             aggregated_likelihoods = torch_scatter.scatter_logsumexp(
-                log_likelihoods, equivalence_classes
+                log_likelihoods[idx], equivalence_classes
             )
             entropy[idx] = aggregated_likelihoods.mean()
         return entropy
