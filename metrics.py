@@ -46,28 +46,33 @@ class SemanticEntropy(Metric):
         Returns: A list with the same length as inputs. The int at the ith index is
         the integer representing the equivalence class assigned to the ith input.
         """
-        equivalence_classes = torch.arange(len(inputs)) #[i for i in range(len(inputs))]
+        equivalence_classes = [i for i in range(len(inputs))] #torch.arange(len(inputs))
         for i in range(len(inputs)):
             for j in range(i, len(inputs)):
                 if self.nli_model.iff(inputs[i], inputs[j]):
                     equivalence_classes[j] = equivalence_classes[i]
                     break
 
-        output, inverse_indices = torch.unique(equivalence_classes, return_inverse=True)
+        # output, inverse_indices = torch.unique(equivalence_classes, return_inverse=True)
 
-        return inverse_indices
+        return equivalence_classes
     
     def compute(self, generations, log_likelihoods):
         """Compute the Semantic Entropy.
         """
-        entropy = torch.zeros(len(generations), device=log_likelihoods.device)
-        for idx, gen in enumerate(generations):
-            equivalence_classes = self.compute_equivalence_classes(gen)
-            equivalence_classes = torch.tensor(equivalence_classes, device=log_likelihoods.device) # LongTensor(equivalence_classes)
-            print(log_likelihoods.shape, equivalence_classes.shape, log_likelihoods[idx], equivalence_classes)
-            aggregated_likelihoods = torch_scatter.scatter_logsumexp(
-                log_likelihoods[idx], equivalence_classes
-            )
-            entropy[idx] = aggregated_likelihoods.mean()
+        equivalence_classes = torch.tensor([
+            self.compute_equivalence_classes(gen)
+            for gen in generations
+        ], device=log_likelihoods.device)
+
+        print(log_likelihoods.shape, equivalence_classes.shape, log_likelihoods, equivalence_classes)
+        aggregated_likelihoods = torch_scatter.scatter_logsumexp(
+            log_likelihoods, equivalence_classes
+        )
+
+        # A masked mean operation
+        mask = aggregated_likelihoods != -torch.inf
+        masked = torch.where(mask, aggregated_likelihoods, 0)
+        entropy = -masked.sum(-1) / mask.sum(-1)
         return entropy
 

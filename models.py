@@ -43,7 +43,7 @@ class HFLanguageModel():
     def __init__(self, hf_model_str: str, device: int = -1) -> None:
         # self.tokenizer = AutoTokenizer.from_pretrained(hf_model_str)
         # self.model = AutoModelForCausalLM.from_pretrained(hf_model_str)
-        self.generator = pipeline('text-generation', model=hf_model_str, device=device)
+        self.generator = pipeline('text-generation', model=hf_model_str, device=device) # device_map="auto"
         self.max_length = 30
         self.device = device
 
@@ -51,14 +51,19 @@ class HFLanguageModel():
         sequences = self.generator(prompt, max_length=self.max_length, num_return_sequences=num_to_generate, return_tensors=True)
         #print(prompt, sequences)
         sequences = torch.tensor([sequence['generated_token_ids'] for sequence in sequences], device=self.device)
-        return sequences
+        cond_probs = self.cond_probs(sequences)
+        decoded = self.decode(sequences)
+        return sequences, cond_probs, decoded
         # TODO: Make torch Batch object
 
         # for idx in range(num_to_generate):
         #     self.model.generate(max_new_tokens=50, return_dict_in_generate=True, output_scores=True)
 
     def logits(self, sequences):
-        return torch.nn.functional.softmax(self.generator.model(sequences).logits, -1).amax(-1)
+        return self.generator.model(sequences).logits
+
+    def cond_probs(self, sequences):
+        return torch.nn.functional.log_softmax(self.generator.model(sequences).logits, -1)
 
     def decode(self, sequences):
         #print('23s', sequences)
@@ -75,3 +80,4 @@ Some weights of the model checkpoint at microsoft/deberta-large-mnli were not us
 
 '''
 #TensorDict({'sequences': })
+
