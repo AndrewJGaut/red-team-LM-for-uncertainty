@@ -33,22 +33,24 @@ class DebertaMNLIModel(NLIModel):
 
     def entails(self, str1, str2):
         nli_input = f"{str1} [SEP] {str2}"
-        encoded_input = self.tokenizer.encode(nli_input, padding=True)
-        prediction = self.model(torch.tensor(torch.tensor([encoded_input]), device='cuda'))['logits']
+        encoded_input = self.tokenizer.encode(nli_input, padding=True, return_tensors='pt').to(self.model.device)
+        prediction = self.model(encoded_input.unsqueeze(0))['logits']
         predicted_label = torch.argmax(prediction, dim=1)
         return (predicted_label == 0)
 
 
 class HFLanguageModel():
-    def __init__(self, hf_model_str: str, device: int = -1) -> None:
+    def __init__(self, hf_model_str: str, return_full_text: bool = True, device: int = -1) -> None:
         # self.tokenizer = AutoTokenizer.from_pretrained(hf_model_str)
         # self.model = AutoModelForCausalLM.from_pretrained(hf_model_str)
-        self.generator = pipeline('text-generation', model=hf_model_str, device=device) # device_map="auto"
+        self.generator = pipeline(
+            'text-generation', model=hf_model_str, device=device, return_tensors=True, return_full_text=return_full_text
+        ) # device_map="auto"
         self.max_length = 30
         self.device = device
 
     def generate_batch(self, prompt, num_to_generate):
-        sequences = self.generator(prompt, max_length=self.max_length, num_return_sequences=num_to_generate, return_tensors=True)
+        sequences = self.generator(prompt, max_length=self.max_length, num_return_sequences=num_to_generate)
         #print(prompt, sequences)
         sequences = torch.tensor([sequence['generated_token_ids'] for sequence in sequences], device=self.device)
         cond_probs = self.cond_probs(sequences)
@@ -56,14 +58,24 @@ class HFLanguageModel():
         return sequences, cond_probs, decoded
         # TODO: Make torch Batch object
 
-        # for idx in range(num_to_generate):
-        #     self.model.generate(max_new_tokens=50, return_dict_in_generate=True, output_scores=True)
+        # prompt_enc = self.generator.tokenizer(
+        #     prompt, padding=False, add_special_tokens=False, return_tensors='pt'
+        # ).to(self.generator.model.device)
+        # sequences = []
+        # cond_probs = []
+        # for _ in range(num_to_generate):
+        #     tokens = self.generator.model.generate(prompt_enc, max_new_tokens=50, return_dict_in_generate=True, output_scores=True)
+        #     sequences.append(tokens)
+        #     cond_probs.append(self.cond_probs(tokens))
+        # decoded = self.decode(sequences)
+        # return sequences, cond_probs, decoded
+
 
     def logits(self, sequences):
         return self.generator.model(sequences).logits
 
     def cond_probs(self, sequences):
-        return torch.nn.functional.log_softmax(self.generator.model(sequences).logits, -1)
+        return torch.nn.functional.log_softmax(self.logits(sequences), -1)
 
     def decode(self, sequences):
         #print('23s', sequences)

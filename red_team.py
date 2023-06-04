@@ -1,5 +1,4 @@
 from argparse import ArgumentParser
-import copy
 from datetime import datetime
 import itertools
 
@@ -9,6 +8,9 @@ from models import *
 import torch
 from torch.utils.tensorboard import SummaryWriter
 
+
+def _all_subclasses(cls):
+    return {cls}.union(s for c in cls.__subclasses__() for s in _all_subclasses(c))
 
 def save(log_dir, model):
     current_date = datetime.now()
@@ -24,16 +26,20 @@ def main(
     """Train red team model to create prompts which produce uncertain outputs from language model.
     """
     # Parse model classes.
-    language_model_pt = HFLanguageModel(language_model, 0)
+    language_model_pt = HFLanguageModel(language_model, False, 0)
     language_model_pt.max_length = 60
-    red_team_model_pt = HFLanguageModel(red_team_model, 0)
-    nli_model_pt = globals()[nli_model]()
+    red_team_model_pt = HFLanguageModel(red_team_model, device=0)
+    ALL_NLIS = {m.__name__: m for m in _all_subclasses(NLIModel)}
+    nli_model_pt = ALL_NLIS[nli_model]()
     semantic_entropy = SemanticEntropy(nli_model_pt)
 
     if language_model == red_team_model:
         orig_model_pt = language_model_pt
     else:
-        orig_model_pt = copy.deepcopy(red_team_model_pt)
+        orig_model_pt = HFLanguageModel(red_team_model, False, 0)
+
+    batch_size = 4
+    gen_count = 10
 
     optimizer = torch.optim.Adam(filter(lambda p: p.requires_grad, language_model_pt.generator.model.parameters()), lr=learning_rate)
     writer = SummaryWriter()
@@ -45,19 +51,19 @@ def main(
             optimizer.zero_grad()
 
             # Forward step
-            prompts, red_lls, prompt_dec = red_team_model_pt.generate_batch("", 4)
+            prompts, red_lls, prompt_dec = red_team_model_pt.generate_batch("", batch_size)
             orig_lls = orig_model_pt.cond_probs(prompts)
 
             sequences = []
             log_likelihoods = []
             for prompt in prompt_dec:
-                sequence_tokens, sequence_lls, sequence_dec = language_model_pt.generate_batch(prompt, 10)
+                _, sequence_lls, sequence_dec = language_model_pt.generate_batch(prompt, gen_count)
                 sequences.append(sequence_dec)
                 log_likelihood = sequence_lls.amax(-1).sum(-1)
                 log_likelihoods.append(log_likelihood)
             log_likelihoods = torch.stack(log_likelihoods)
             
-            entropy = semantic_entropy.compute(sequences, log_likelihoods).sum()
+            entropy = semantic_entropy.compute(sequences, log_likelihoods).mean()
             kl = torch.nn.functional.kl_div(red_lls, orig_lls, log_target=True)
             # (orig_logits - red_logits).sum(-1) # TODO: Figure this out later
             loss = -entropy + alpha * kl
@@ -66,12 +72,12 @@ def main(
             loss.backward()
             optimizer.step()
 
-            writer.add_scalar('Entropy', entropy.item(), i)
-            writer.add_scalar('KL', kl.item(), i)
-            writer.add_scalar('Loss', loss.item(), i)
+            writer.add_scalar('train/Entropy', entropy.item(), i)
+            writer.add_scalar('train/KL', kl.item(), i)
+            writer.add_scalar('train/Loss', loss.item(), i)
             writer.flush()
 
-            if i % 500 == 499:
+            if i % 175 == 174:
                 save(writer.log_dir, red_team_model_pt)
     finally:
         save(writer.log_dir, red_team_model_pt)
@@ -87,14 +93,14 @@ if __name__ == '__main__':
         '--language-model',
         type=str,
         help="Huggingface string for model that is being adversarially attacked by the red team model",
-        default='gpt2',#'stabilityai/stablelm-tuned-alpha-3b'
+        default='vvsotnikov/stablelm-tuned-alpha-3b-16bit',#'gpt2'
     )
     parser.add_argument(
         '-rt',
         '--red-team-model',
         type=str,
         help="Huggingface string for red team model",
-        default='gpt2',#'stabilityai/stablelm-tuned-alpha-3b'
+        default='PrimeQA/t5-base-table-question-generator',#'stabilityai/stablelm-tuned-alpha-3b'
     )
     parser.add_argument(
         '-nli',
@@ -122,7 +128,7 @@ if __name__ == '__main__':
         '--alpha',
         type=float,
         help="KL penalty factor",
-        default=1e7
+        default=2.5e6
     )
     # Todo... add more arguments.
     args = parser.parse_args()

@@ -46,14 +46,12 @@ class SemanticEntropy(Metric):
         Returns: A list with the same length as inputs. The int at the ith index is
         the integer representing the equivalence class assigned to the ith input.
         """
-        equivalence_classes = [i for i in range(len(inputs))] #torch.arange(len(inputs))
+        equivalence_classes = [i for i in range(len(inputs))]
         for i in range(len(inputs)):
             for j in range(i, len(inputs)):
                 if self.nli_model.iff(inputs[i], inputs[j]):
                     equivalence_classes[j] = equivalence_classes[i]
                     break
-
-        # output, inverse_indices = torch.unique(equivalence_classes, return_inverse=True)
 
         return equivalence_classes
     
@@ -65,7 +63,6 @@ class SemanticEntropy(Metric):
             for gen in generations
         ], device=log_likelihoods.device)
 
-        print(log_likelihoods.shape, equivalence_classes.shape, log_likelihoods, equivalence_classes)
         aggregated_likelihoods = torch_scatter.scatter_logsumexp(
             log_likelihoods, equivalence_classes
         )
@@ -75,4 +72,3 @@ class SemanticEntropy(Metric):
         masked = torch.where(mask, aggregated_likelihoods, 0)
         entropy = -masked.sum(-1) / mask.sum(-1)
         return entropy
-
