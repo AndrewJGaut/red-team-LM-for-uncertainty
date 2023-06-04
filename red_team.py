@@ -9,8 +9,9 @@ import torch
 from torch.utils.tensorboard import SummaryWriter
 
 
-def _all_subclasses(cls):
-    return {cls}.union(s for c in cls.__subclasses__() for s in _all_subclasses(c))
+def _all_subclasses_mapping(cls):
+    all_subclasses = {cls}.union(s for c in cls.__subclasses__() for s in _all_subclasses(c))
+    return {m.__name__: m for m in all_subclasses}
 
 def save(log_dir, model):
     current_date = datetime.now()
@@ -26,11 +27,11 @@ def main(
     """Train red team model to create prompts which produce uncertain outputs from language model.
     """
     # Parse model classes.
-    language_model_pt = HFLanguageModel(language_model, False, 0)
-    language_model_pt.max_length = 60
+    language_model_pt = HFLanguageModel(language_model, False, device=0, 60)
     red_team_model_pt = HFLanguageModel(red_team_model, device=0)
-    ALL_NLIS = {m.__name__: m for m in _all_subclasses(NLIModel)}
-    nli_model_pt = ALL_NLIS[nli_model]()
+    nli_model_pt = _all_subclasses_mapping(NLIModel)[nli_model]()
+
+    # Parse metric classes
     semantic_entropy = SemanticEntropy(nli_model_pt)
 
     if language_model == red_team_model:
@@ -130,7 +131,13 @@ if __name__ == '__main__':
         help="KL penalty factor",
         default=2.5e6
     )
-    # Todo... add more arguments.
+    parser.add_argument(
+        '-rt',
+        '--red-team-model',
+        type=str,
+        help="Huggingface string for red team model",
+        default='PrimeQA/t5-base-table-question-generator'
+    )
     args = parser.parse_args()
     main(
         args.language_model,

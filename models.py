@@ -40,13 +40,13 @@ class DebertaMNLIModel(NLIModel):
 
 
 class HFLanguageModel():
-    def __init__(self, hf_model_str: str, return_full_text: bool = True, device: int = -1) -> None:
+    def __init__(self, hf_model_str: str, return_full_text: bool = True, device: int = -1, max_length: int = 30) -> None:
         # self.tokenizer = AutoTokenizer.from_pretrained(hf_model_str)
         # self.model = AutoModelForCausalLM.from_pretrained(hf_model_str)
         self.generator = pipeline(
             'text-generation', model=hf_model_str, device=device, return_tensors=True, return_full_text=return_full_text
         ) # device_map="auto"
-        self.max_length = 30
+        self.max_length = max_length
         self.device = device
 
     def generate_batch(self, prompt, num_to_generate):
@@ -57,18 +57,6 @@ class HFLanguageModel():
         decoded = self.decode(sequences)
         return sequences, cond_probs, decoded
         # TODO: Make torch Batch object
-
-        # prompt_enc = self.generator.tokenizer(
-        #     prompt, padding=False, add_special_tokens=False, return_tensors='pt'
-        # ).to(self.generator.model.device)
-        # sequences = []
-        # cond_probs = []
-        # for _ in range(num_to_generate):
-        #     tokens = self.generator.model.generate(prompt_enc, max_new_tokens=50, return_dict_in_generate=True, output_scores=True)
-        #     sequences.append(tokens)
-        #     cond_probs.append(self.cond_probs(tokens))
-        # decoded = self.decode(sequences)
-        # return sequences, cond_probs, decoded
 
 
     def logits(self, sequences):
