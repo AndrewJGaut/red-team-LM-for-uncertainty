@@ -16,7 +16,7 @@ def _all_subclasses_mapping(cls):
         return {cls}.union(s for c in cls.__subclasses__() for s in _all_subclasses(c))
     return {m.__name__: m for m in _all_subclasses(cls)}
 
-def train(train_iter, full_model, num_to_generate, learning_rate):
+def train(train_iter, full_model, semantic_entropy, num_to_generate, learning_rate):
     """Run training.
     """
     def save(log_dir, model):
@@ -33,7 +33,7 @@ def train(train_iter, full_model, num_to_generate, learning_rate):
 
             # Forward step
             context, real_question, answers, _ = instance
-            question, sequences, lm_lls, red_lls, orig_lls = full_model(context, answers, num_to_generate)
+            question, sequences, lm_lls, red_lls, orig_lls = full_model(context, real_question, answers, num_to_generate)
             
             # Get loss.
             entropy = semantic_entropy.compute(sequences, lm_lls).mean()
@@ -60,7 +60,7 @@ def test(test_iter, full_model, qa_metrics):
     for i, instance in enumerate(test_iter):
         # Forward step
         context, real_question, answers, _ = instance
-        question, pred_answers, _, _, _ = full_model(context, answers, 1)
+        question, pred_answers, _, _, _ = full_model(context, real_question, answers, 1)
         pred_answer = pred_answers[0]
 
         # Evalute and log metrics.
@@ -111,7 +111,7 @@ def main(
     if path_to_red_team_model:
         full_model.red_team.load_state_dict(torch.load(red_team_model_path))
     else:
-        train(train_iter, full_model, semantic_entropy_m, learning_rate)
+        train(train_iter, full_model, semantic_entropy, semantic_entropy_m, learning_rate)
     test(test_iter, full_model, [F1(), EM()])
 
 if __name__ == '__main__':

@@ -15,15 +15,15 @@ class FullPipeline(Module):
         self.red_team = red_team
         self.red_team_original = red_team_original
     
-    def forward(self, context, answers, num_to_generate):
+    def forward(self, context, question, answers, num_to_generate):
         """One forward pass over the whole model.
         """
         # Get prompt from context and answers.
-        question_generation_prompt_dec, question_generation_prompt = self.red_team.generate_prompt(context, answers)
+        question_generation_prompt_dec = self.red_team.generate_prompt(context, answers) 
 
         # Generate questions and log-likelihoods with Red Team Model and feed into Language Model.
-        prompts, red_lls, prompts_dec = self.red_team._generate_batch_for_prompt(question_generation_prompt_dec, 1)
-        orig_lls = self.red_team_original.cond_probs(prompts)
+        prompts, red_lls, prompts_dec = self.red_team._generate_batch_for_prompt(question_generation_prompt_dec, 1, labels=question)
+        orig_lls = self.red_team_original.cond_probs(prompts, question)
         sequences, lm_lls = self.lm.generate_batch_for_prompts(prompts_dec, num_to_generate)
         return prompts_dec[0], sequences, lm_lls, red_lls, orig_lls
 
@@ -75,10 +75,10 @@ class HFLanguageModel():
         self.max_length = max_length
         self.device = device
 
-    def _generate_batch_for_prompt(self, prompt, num_to_generate):
+    def _generate_batch_for_prompt(self, prompt, num_to_generate, labels=None):
         sequences = self.generator(prompt, max_length=self.max_length, num_return_sequences=num_to_generate)
         sequences = torch.tensor([sequence['generated_token_ids'] for sequence in sequences], device=self.device)
-        cond_probs = self.cond_probs(sequences)
+        cond_probs = self.cond_probs(sequences, labels)
         decoded = self.decode(sequences)
         return sequences, cond_probs, decoded
         # TODO: Make torch Batch object
@@ -86,8 +86,8 @@ class HFLanguageModel():
     def generate_batch_for_prompts(self, prompts, num_to_generate):
         sequences = []
         log_likelihoods = []
-        for prompt in prompt_dec:
-            _, sequence_lls, sequence_dec = language_model_pt.generate_batch(prompt, num_to_generate)
+        for prompt in prompts:
+            _, sequence_lls, sequence_dec = self._generate_batch_for_prompt(prompt, num_to_generate)
             sequences.append(sequence_dec)
             log_likelihood = sequence_lls.amax(-1).sum(-1)
             log_likelihoods.append(log_likelihood)
@@ -98,16 +98,20 @@ class HFLanguageModel():
         """Generate prompt for question generation models.
         """
         answer = random.sample(answers, 1)  # Just take one answer.
-        prompt_str = f"answer: {answer}. context: {context}"
-        return prompt_str, self.generator.tokenizer(prompt_str) 
+        return f"answer: {answer}. context: {context}"
 
 
 
-    def logits(self, sequences):
+    def logits(self, sequences, labels=None):
+        if labels:
+            labels = self.generator.tokenizer(labels)
+            labels = torch.tensor(labels['input_ids']).to(sequences.device)
+            labels = labels.unsqueeze(0)
+            return self.generator.model(sequences, labels=labels).logits
         return self.generator.model(sequences).logits
 
-    def cond_probs(self, sequences):
-        return torch.nn.functional.log_softmax(self.logits(sequences), -1)
+    def cond_probs(self, sequences, labels=None):
+        return torch.nn.functional.log_softmax(self.logits(sequences, labels), -1)
 
     def decode(self, sequences):
         #print('23s', sequences)
