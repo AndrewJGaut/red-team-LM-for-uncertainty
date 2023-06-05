@@ -61,7 +61,7 @@ class DebertaMNLIModel(NLIModel):
     def entails(self, str1, str2):
         nli_input = f"{str1} [SEP] {str2}"
         encoded_input = self.tokenizer.encode(nli_input, padding=True, return_tensors='pt').to(self.model.device)
-        prediction = self.model(encoded_input.unsqueeze(0))['logits']
+        prediction = self.model(encoded_input)['logits']
         predicted_label = torch.argmax(prediction, dim=1)
         return (predicted_label == 0)
 

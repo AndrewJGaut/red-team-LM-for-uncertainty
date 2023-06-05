@@ -6,6 +6,7 @@ import torch
 from torch.utils.tensorboard import SummaryWriter
 import torchdata
 from torchtext.datasets import SQuAD1
+from tqdm import tqdm
 from typing import Optional
 
 from metrics import *
@@ -16,7 +17,7 @@ def _all_subclasses_mapping(cls):
         return {cls}.union(s for c in cls.__subclasses__() for s in _all_subclasses(c))
     return {m.__name__: m for m in _all_subclasses(cls)}
 
-def train(train_iter, full_model, semantic_entropy, num_to_generate, learning_rate):
+def train(train_iter, full_model, semantic_entropy, num_to_generate, learning_rate, alpha):
     """Run training.
     """
     def save(log_dir, model):
@@ -27,7 +28,7 @@ def train(train_iter, full_model, semantic_entropy, num_to_generate, learning_ra
     writer = SummaryWriter()
 
     try:
-        for i, instance in enumerate(train_iter):
+        for i, instance in enumerate(tqdm(train_iter)):
             # Zero gradients
             optimizer.zero_grad()
 
@@ -46,18 +47,18 @@ def train(train_iter, full_model, semantic_entropy, num_to_generate, learning_ra
 
             # Logging.
             writer.add_text('train/GeneratedQuestion', question, i)
-            writer.add_text('train/RealQuestion', reql_question, i)
+            writer.add_text('train/RealQuestion', real_question, i)
             writer.add_scalar('train/Entropy', entropy.item(), i)
             writer.add_scalar('train/KL', kl.item(), i)
             writer.add_scalar('train/Loss', loss.item(), i)
             writer.flush()
-            if i % len(train_iter // 50) == 0:
+            if i % len(train_iter) // 50 == 0:
                 save(writer.log_dir, full_model.red_team.generator.model)
     finally:
         save(writer.log_dir, full_model.red_team.generator.model)
 
 def test(test_iter, full_model, qa_metrics):
-    for i, instance in enumerate(test_iter):
+    for i, instance in enumerate(tqdm(test_iter)):
         # Forward step
         context, real_question, answers, _ = instance
         question, pred_answers, _, _, _ = full_model(context, real_question, answers, 1)
@@ -111,7 +112,7 @@ def main(
     if path_to_red_team_model:
         full_model.red_team.load_state_dict(torch.load(red_team_model_path))
     else:
-        train(train_iter, full_model, semantic_entropy, semantic_entropy_m, learning_rate)
+        train(train_iter, full_model, semantic_entropy, semantic_entropy_m, learning_rate, alpha)
     test(test_iter, full_model, [F1(), EM()])
 
 if __name__ == '__main__':
@@ -170,7 +171,7 @@ if __name__ == '__main__':
         '--train-dataset-size',
         type=int,
         help="Number of (context, answer) pairs to use for training",
-        default=100
+        default=10
     )
     parser.add_argument(
         '--dev-dataset-size',
@@ -182,7 +183,7 @@ if __name__ == '__main__':
         '--test-dataset-size',
         type=int,
         help="Number of (context, answer) pairs to use for test",
-        default=10
+        default=3
     )
     args = parser.parse_args()
     main(
