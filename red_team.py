@@ -51,32 +51,27 @@ def train(train_iter, full_model, num_to_generate):
             writer.add_scalar('train/KL', kl.item(), i)
             writer.add_scalar('train/Loss', loss.item(), i)
             writer.flush()
-            if i % 175 == 174:
+            if i % len(train_iter // 100) == 0:
                 save(writer.log_dir, red_team_model_pt)
     finally:
         save(writer.log_dir, red_team_model_pt)
 
 def test(test_iter, full_model, qa_metrics):
-    try:
-        for i, instance in enumerate(test_iter):
-            # Forward step
-            context, question, answers, _ = instance
-            pred_answers, _, _, _ = full_model(context, answers, 1)
-            pred_answer = pred_answers[0]
+    for i, instance in enumerate(test_iter):
+        # Forward step
+        context, question, answers, _ = instance
+        pred_answers, _, _, _ = full_model(context, answers, 1)
+        pred_answer = pred_answers[0]
 
-            # Evalute and log metrics.
-            for metric in qa_metrics:
-                idx, val = metric(pred_answer, answers)
-                writer.add_text(f'test/{metric}-Answer', answers[idx])
-                writer.add_text(f'text/{metric}', val)
+        # Evalute and log metrics.
+        for metric in qa_metrics:
+            idx, val = metric(pred_answer, answers)
+            writer.add_text(f'test/{metric}-Answer', answers[idx])
+            writer.add_text(f'text/{metric}', val)
 
-            # Logging.
-            writer.add_text('test/PredictedAnswer', pred_answer, i)
-            writer.flush()
-            if i % 175 == 174:
-                save(writer.log_dir, red_team_model_pt)
-    finally:
-        save(writer.log_dir, red_team_model_pt)
+        # Logging.
+        writer.add_text('test/PredictedAnswer', pred_answer, i)
+        writer.flush()
 
 
 def main(
@@ -106,7 +101,7 @@ def main(
 
     # Evaluate model.
     full_model = FullPipeline(language_model_pt, red_team_model_pt, orig_model_pt)
-    train(SQuAD1(split='train').header(num_train_instances), full_model, num_to_generate)
+    train(SQuAD1(split='train').header(num_train_instances), full_model, semantic_entropy_m)
     test(SQuAD1(split='test').header(num_test_instances), full_model, [F1(), EM()])
 
 if __name__ == '__main__':
