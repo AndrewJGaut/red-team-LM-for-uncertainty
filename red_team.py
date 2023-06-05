@@ -11,19 +11,19 @@ from typing import Optional
 from metrics import *
 from models import *
 
-
 def _all_subclasses_mapping(cls):
-    all_subclasses = {cls}.union(s for c in cls.__subclasses__() for s in _all_subclasses(c))
-    return {m.__name__: m for m in all_subclasses}
+    def _all_subclasses(cls):
+        return {cls}.union(s for c in cls.__subclasses__() for s in _all_subclasses(c))
+    return {m.__name__: m for m in _all_subclasses(cls)}
 
-def train(train_iter, full_model, num_to_generate):
+def train(train_iter, full_model, num_to_generate, learning_rate):
     """Run training.
     """
     def save(log_dir, model):
         current_date = datetime.now()
         torch.save(model.state_dict(), f'{log_dir}/{current_date.isoformat()}.pt')
 
-    optimizer = torch.optim.Adam(filter(lambda p: p.requires_grad, language_model_pt.generator.model.parameters()), lr=learning_rate)
+    optimizer = torch.optim.Adam(filter(lambda p: p.requires_grad, full_model.red_team.generator.model.parameters()), lr=learning_rate)
     writer = SummaryWriter()
 
     try:
@@ -52,9 +52,9 @@ def train(train_iter, full_model, num_to_generate):
             writer.add_scalar('train/Loss', loss.item(), i)
             writer.flush()
             if i % len(train_iter // 50) == 0:
-                save(writer.log_dir, red_team_model_pt)
+                save(writer.log_dir, full_model.red_team.generator.model)
     finally:
-        save(writer.log_dir, red_team_model_pt)
+        save(writer.log_dir, full_model.red_team.generator.model)
 
 def test(test_iter, full_model, qa_metrics):
     for i, instance in enumerate(test_iter):
@@ -90,7 +90,7 @@ def main(
     """Train red team model to create prompts which produce uncertain outputs from language model.
     """
     # Parse language model classes.
-    language_model_pt = HFLanguageModel(language_model, False, device=0, 60)
+    language_model_pt = HFLanguageModel(language_model, False, device=0, max_length=60)
     red_team_model_pt = HFLanguageModel(red_team_model, device=0)
     if language_model == red_team_model:
         orig_model_pt = language_model_pt
@@ -111,7 +111,7 @@ def main(
     if path_to_red_team_model:
         full_model.red_team.load_state_dict(torch.load(red_team_model_path))
     else:
-        train(train_iter, full_model, semantic_entropy_m)
+        train(train_iter, full_model, semantic_entropy_m, learning_rate)
     test(test_iter, full_model, [F1(), EM()])
 
 if __name__ == '__main__':
@@ -124,7 +124,7 @@ if __name__ == '__main__':
         '--language-model',
         type=str,
         help="Huggingface string for model that is being adversarially attacked by the red team model",
-        default='vvsotnikov/stablelm-tuned-alpha-3b-16bit',
+        default='gpt2',#'vvsotnikov/stablelm-tuned-alpha-3b-16bit',
     )
     parser.add_argument(
         '-rt',
@@ -192,7 +192,7 @@ if __name__ == '__main__':
         args.path_to_red_team_model,
         args.alpha,
         args.learning_rate,
-        args.semantic_entropy_m
+        args.semantic_entropy_m,
         args.train_dataset_size,
         args.dev_dataset_size,
         args.test_dataset_size

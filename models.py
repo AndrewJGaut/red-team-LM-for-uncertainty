@@ -3,12 +3,13 @@ import random
 import torch
 from torch.nn import Module
 from transformers import AutoModelForSequenceClassification, AutoModelForCausalLM, AutoTokenizer, pipeline
+from typing import List, Tuple
 
 
 class FullPipeline(Module):
     """Class that runs the full RedTeam-LanguageModel pipeline.
     """
-    def __init__(self, lm, red_team, red_team_original, semantic_entropy_m):
+    def __init__(self, lm, red_team, red_team_original):
         super().__init__()
         self.lm = lm
         self.red_team = red_team
@@ -18,12 +19,12 @@ class FullPipeline(Module):
         """One forward pass over the whole model.
         """
         # Get prompt from context and answers.
-        question_generation_prompt = red_team.generate_prompt()
+        question_generation_prompt = self.red_team.generate_prompt(context, answers)
 
         # Generate questions and log-likelihoods with Red Team Model and feed into Language Model.
-        prompts, red_lls, prompts_dec = red_team._generate_batch_for_prompt(question_generation_prompt, 1)
-        orig_lls = red_team_original.cond_probs(prompts)
-        sequences, lm_lls = lm.generate_batch_for_prompts(prompts_dec, num_to_generate)
+        prompts, red_lls, prompts_dec = self.red_team._generate_batch_for_prompt(question_generation_prompt, 1)
+        orig_lls = self.red_team_original.cond_probs(prompts)
+        sequences, lm_lls = self.lm.generate_batch_for_prompts(prompts_dec, num_to_generate)
         return prompts[0], sequences, lm_lls, red_lls, orig_lls
 
 
@@ -70,8 +71,7 @@ class HFLanguageModel():
         # self.tokenizer = AutoTokenizer.from_pretrained(hf_model_str)
         # self.model = AutoModelForCausalLM.from_pretrained(hf_model_str)
         self.generator = pipeline(
-            'text-generation', model=hf_model_str, device=device, return_tensors=True, return_full_text=return_full_text
-        ) # device_map="auto"
+            'text-generation', model=hf_model_str, device=device, return_tensors=True) 
         self.max_length = max_length
         self.device = device
 
@@ -94,11 +94,12 @@ class HFLanguageModel():
         log_likelihoods = torch.stack(log_likelihoods)
         return sequences, log_likelihoods
     
-    def generate_prompt(context: str, answers: List[str]) -> str:
+    def generate_prompt(self, context: str, answers: List[str]) -> Tuple[str, str]:
         """Generate prompt for question generation models.
         """
         answer = random.sample(answers, 1)  # Just take one answer.
-        return f"answer: {answer}. context: {context}"
+        prompt_str = f"answer: {answer}. context: {context}"
+        return prompt_str, self.generator.tokenizer(prompt_str) 
 
 
 
