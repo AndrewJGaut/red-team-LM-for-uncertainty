@@ -1,5 +1,7 @@
 from abc import ABC
 from collections import Counter
+import re
+import string
 import torch
 import torch_scatter
 from typing import Any, List
@@ -73,7 +75,7 @@ class SemanticEntropy(Metric):
 
 
 """Abstract Base Class"""
-class QAMetric(ABC):
+class QAMetric(Metric):
     def __init__(self, name: str):
         super().__init__(name)
 
@@ -81,7 +83,7 @@ class QAMetric(ABC):
         """From the official SQuAD 2.0 eval script."""
         if not s:
             return []
-        return normalize_answer(s).split()
+        return self.normalize_answer(s).split()
     
     def normalize_answer(self, s):
         """Convert to lowercase and remove punctuation, articles and extra whitespace.
@@ -117,7 +119,7 @@ class QAMetric(ABC):
         """
         pass
 
-    def compute(self, pred_answer: str, answers: List[List[str]]) -> Tuple[int, float]:
+    def compute(self, pred_answer: str, answers: List[str]) -> Tuple[int, float]:
         """Compute score for predicted answer given real answers.
 
         Params:
@@ -127,7 +129,7 @@ class QAMetric(ABC):
         Returns: A tuple. First element is index of ground truth answers corresponding
             to the max evaluation metric score. Second element is that score.
         """
-        vals = [_compute(pred_answer, answer) for answer in answers]
+        vals = [self._compute(pred_answer, answer) for answer in answers]
         max_idx = torch.argmax(torch.tensor(vals))
         return max_idx, vals[max_idx]
 

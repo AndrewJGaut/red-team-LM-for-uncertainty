@@ -58,17 +58,18 @@ def train(train_iter, full_model, semantic_entropy, num_to_generate, learning_ra
         save(writer.log_dir, full_model.red_team.generator.model)
 
 def test(test_iter, full_model, qa_metrics):
+    writer = SummaryWriter()
     for i, instance in enumerate(tqdm(test_iter)):
         # Forward step
         context, real_question, answers, _ = instance
         question, pred_answers, _, _, _ = full_model(context, real_question, answers, 1)
-        pred_answer = pred_answers[0]
+        pred_answer = pred_answers[0][0]
 
         # Evalute and log metrics.
         for metric in qa_metrics:
-            idx, val = metric(pred_answer, answers)
+            idx, val = metric.compute(pred_answer, answers)
             writer.add_text(f'test/{metric}-Answer', answers[idx])
-            writer.add_text(f'text/{metric}', val)
+            writer.add_scalar(f'text/{metric}', val)
 
         # Logging.
         writer.add_text('test/GeneratedQuestion', question, i)
@@ -125,7 +126,7 @@ if __name__ == '__main__':
         '--language-model',
         type=str,
         help="Huggingface string for model that is being adversarially attacked by the red team model",
-        default='gpt2',#'vvsotnikov/stablelm-tuned-alpha-3b-16bit',
+        default='vvsotnikov/stablelm-tuned-alpha-3b-16bit',
     )
     parser.add_argument(
         '-rt',
@@ -165,25 +166,25 @@ if __name__ == '__main__':
         '--semantic-entropy-m',
         type=int,
         help="Number of generations to use for computing semantic entropy",
-        default=1
+        default=4
     )
     parser.add_argument(
         '--train-dataset-size',
         type=int,
         help="Number of (context, answer) pairs to use for training",
-        default=10
+        default=10000,
     )
     parser.add_argument(
         '--dev-dataset-size',
         type=int,
         help="Number of (context, answer) pairs to use for dev",
-        default=10
+        default=100
     )
     parser.add_argument(
         '--test-dataset-size',
         type=int,
         help="Number of (context, answer) pairs to use for test",
-        default=3
+        default=100
     )
     args = parser.parse_args()
     main(
