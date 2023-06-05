@@ -1,6 +1,32 @@
 from abc import ABC, abstractmethod
+import random
 import torch
+from torch.nn import Module
 from transformers import AutoModelForSequenceClassification, AutoModelForCausalLM, AutoTokenizer, pipeline
+
+
+class FullPipeline(Module):
+    """Class that runs the full RedTeam-LanguageModel pipeline.
+    """
+    def __init__(self, lm, red_team, red_team_original, semantic_entropy_m):
+        super().__init__()
+        self.lm = lm
+        self.red_team = red_team
+        self.red_team_original = red_team_original
+    
+    def forward(self, context, answers, num_to_generate):
+        """One forward pass over the whole model.
+        """
+        # Get prompt from context and answers.
+        question_generation_prompt = red_team.generate_prompt()
+
+        # Generate questions and log-likelihoods with Red Team Model and feed into Language Model.
+        prompts, red_lls, prompts_dec = red_team._generate_batch_for_prompt(question_generation_prompt, 1)
+        orig_lls = red_team_original.cond_probs(prompts)
+        sequences, lm_lls = lm.generate_batch_for_prompts(prompts_dec, num_to_generate)
+        return sequences, lm_lls, red_lls, orig_lls
+
+
 
 """Abstract base class"""
 class NLIModel(ABC):
@@ -49,14 +75,31 @@ class HFLanguageModel():
         self.max_length = max_length
         self.device = device
 
-    def generate_batch(self, prompt, num_to_generate):
+    def _generate_batch_for_prompt(self, prompt, num_to_generate):
         sequences = self.generator(prompt, max_length=self.max_length, num_return_sequences=num_to_generate)
-        #print(prompt, sequences)
         sequences = torch.tensor([sequence['generated_token_ids'] for sequence in sequences], device=self.device)
         cond_probs = self.cond_probs(sequences)
         decoded = self.decode(sequences)
         return sequences, cond_probs, decoded
         # TODO: Make torch Batch object
+    
+    def generate_batch_for_prompts(self, prompts, num_to_generate):
+        sequences = []
+        log_likelihoods = []
+        for prompt in prompt_dec:
+            _, sequence_lls, sequence_dec = language_model_pt.generate_batch(prompt, num_to_generate)
+            sequences.append(sequence_dec)
+            log_likelihood = sequence_lls.amax(-1).sum(-1)
+            log_likelihoods.append(log_likelihood)
+        log_likelihoods = torch.stack(log_likelihoods)
+        return sequences, log_likelihoods
+    
+    def generate_prompt(context: str, answers: List[str]) -> str:
+        """Generate prompt for question generation models.
+        """
+        answer = random.sample(answers, 1)  # Just take one answer.
+        return f"answer: {answer}. context: {context}"
+
 
 
     def logits(self, sequences):
