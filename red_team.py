@@ -6,6 +6,7 @@ import torch
 from torch.utils.tensorboard import SummaryWriter
 import torchdata
 from torchtext.datasets import SQuAD1
+from typing import Optional
 
 from metrics import *
 from models import *
@@ -15,14 +16,12 @@ def _all_subclasses_mapping(cls):
     all_subclasses = {cls}.union(s for c in cls.__subclasses__() for s in _all_subclasses(c))
     return {m.__name__: m for m in all_subclasses}
 
-
-
 def train(train_iter, full_model, num_to_generate):
     """Run training.
     """
     def save(log_dir, model):
         current_date = datetime.now()
-        torch.save(model, f'{log_dir}/{current_date.isoformat()}.pt')
+        torch.save(model.state_dict(), f'{log_dir}/{current_date.isoformat()}.pt')
 
     optimizer = torch.optim.Adam(filter(lambda p: p.requires_grad, language_model_pt.generator.model.parameters()), lr=learning_rate)
     writer = SummaryWriter()
@@ -51,7 +50,7 @@ def train(train_iter, full_model, num_to_generate):
             writer.add_scalar('train/KL', kl.item(), i)
             writer.add_scalar('train/Loss', loss.item(), i)
             writer.flush()
-            if i % len(train_iter // 100) == 0:
+            if i % len(train_iter // 50) == 0:
                 save(writer.log_dir, red_team_model_pt)
     finally:
         save(writer.log_dir, red_team_model_pt)
@@ -73,17 +72,17 @@ def test(test_iter, full_model, qa_metrics):
         writer.add_text('test/PredictedAnswer', pred_answer, i)
         writer.flush()
 
-
 def main(
     language_model: str,
     red_team_model: str,
     nli_model: str,
+    path_to_red_team_model: Optional[str],
     alpha: float,
     learning_rate: float,
     semantic_entropy_m: int,
-    num_train_instances: int,
-    num_dev_instances: int,
-    num_test_instances: int
+    num_train_instances: Optional[int],
+    num_dev_instances: Optional[int],
+    num_test_instances: Optional[int]
 ) -> None:
     """Train red team model to create prompts which produce uncertain outputs from language model.
     """
@@ -99,10 +98,18 @@ def main(
     nli_model_pt = _all_subclasses_mapping(NLIModel)[nli_model]()
     semantic_entropy = SemanticEntropy(nli_model_pt)
 
-    # Evaluate model.
+    # Get data iters.
+    train_iter = SQuAD1(split='train').header(num_train_instances) if num_train_instances else SQuAD1(split='train')
+    test_iter = SQuAD1(split='train').header(num_test_instances) if num_test_instances else SQuAD1(split='train')
+
+
+    # Train and evaluate.
     full_model = FullPipeline(language_model_pt, red_team_model_pt, orig_model_pt)
-    train(SQuAD1(split='train').header(num_train_instances), full_model, semantic_entropy_m)
-    test(SQuAD1(split='test').header(num_test_instances), full_model, [F1(), EM()])
+    if path_to_red_team_model:
+        full_model.red_team.load_state_dict(torch.load(red_team_model_path))
+    else:
+        train(train_iter, full_model, semantic_entropy_m)
+    test(test_iter, full_model, [F1(), EM()])
 
 if __name__ == '__main__':
     parser = ArgumentParser(
@@ -114,28 +121,27 @@ if __name__ == '__main__':
         '--language-model',
         type=str,
         help="Huggingface string for model that is being adversarially attacked by the red team model",
-        default='vvsotnikov/stablelm-tuned-alpha-3b-16bit',#'gpt2'
+        default='vvsotnikov/stablelm-tuned-alpha-3b-16bit',
     )
     parser.add_argument(
         '-rt',
         '--red-team-model',
         type=str,
         help="Huggingface string for red team model",
-        default='PrimeQA/t5-base-table-question-generator',#'stabilityai/stablelm-tuned-alpha-3b'
+        default='PrimeQA/t5-base-table-question-generator',
     )
     parser.add_argument(
         '-nli',
         '--nli-model',
         type=str,
-        help="String for red team model. Possible values: [DebertaMNLIModel]",
+        help="String for NLI model. Possible values: [DebertaMNLIModel]",
         default='DebertaMNLIModel'
     )
     parser.add_argument(
-        '-nli',
-        '--nli-model',
+        '--path-to-red-team-model',
         type=str,
-        help="String for red team model. Possible values: [DebertaMNLIModel]",
-        default='DebertaMNLIModel'
+        help="Path to saved red team model state dict. If not None, training will be skipped.",
+        default=None
     )
     parser.add_argument(
         '-lr',
@@ -161,25 +167,26 @@ if __name__ == '__main__':
         '--train-dataset-size',
         type=int,
         help="Number of (context, answer) pairs to use for training",
-        default='100'
+        default=100
     )
     parser.add_argument(
         '--dev-dataset-size',
         type=int,
         help="Number of (context, answer) pairs to use for dev",
-        default='10'
+        default=10
     )
     parser.add_argument(
         '--test-dataset-size',
         type=int,
         help="Number of (context, answer) pairs to use for test",
-        default='10'
+        default=10
     )
     args = parser.parse_args()
     main(
         args.language_model,
         args.red_team_model,
         args.nli_model,
+        args.path_to_red_team_model,
         args.alpha,
         args.learning_rate,
         args.semantic_entropy_m
@@ -187,6 +194,3 @@ if __name__ == '__main__':
         args.dev_dataset_size,
         args.test_dataset_size
     )
-
-
-
