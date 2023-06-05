@@ -1,6 +1,33 @@
 from abc import ABC, abstractmethod
+import random
 import torch
+from torch.nn import Module
 from transformers import AutoModelForSequenceClassification, AutoModelForCausalLM, AutoTokenizer, pipeline
+from typing import List, Tuple
+
+
+class FullPipeline(Module):
+    """Class that runs the full RedTeam-LanguageModel pipeline.
+    """
+    def __init__(self, lm, red_team, red_team_original):
+        super().__init__()
+        self.lm = lm
+        self.red_team = red_team
+        self.red_team_original = red_team_original
+    
+    def forward(self, context, question, answers, num_to_generate):
+        """One forward pass over the whole model.
+        """
+        # Get prompt from context and answers.
+        question_generation_prompt_dec = self.red_team.generate_prompt(context, answers) 
+
+        # Generate questions and log-likelihoods with Red Team Model and feed into Language Model.
+        prompts, red_lls, prompts_dec = self.red_team._generate_batch_for_prompt(question_generation_prompt_dec, 1, labels=question)
+        orig_lls = self.red_team_original.cond_probs(prompts, question)
+        sequences, lm_lls = self.lm.generate_batch_for_prompts(prompts_dec, num_to_generate)
+        return prompts_dec[0], sequences, lm_lls, red_lls, orig_lls
+
+
 
 """Abstract base class"""
 class NLIModel(ABC):
@@ -34,48 +61,57 @@ class DebertaMNLIModel(NLIModel):
     def entails(self, str1, str2):
         nli_input = f"{str1} [SEP] {str2}"
         encoded_input = self.tokenizer.encode(nli_input, padding=True, return_tensors='pt').to(self.model.device)
-        prediction = self.model(encoded_input.unsqueeze(0))['logits']
+        prediction = self.model(encoded_input)['logits']
         predicted_label = torch.argmax(prediction, dim=1)
         return (predicted_label == 0)
 
 
 class HFLanguageModel():
-    def __init__(self, hf_model_str: str, return_full_text: bool = True, device: int = -1) -> None:
+    def __init__(self, hf_model_str: str, return_full_text: bool = True, device: int = -1, max_length: int = 30) -> None:
         # self.tokenizer = AutoTokenizer.from_pretrained(hf_model_str)
         # self.model = AutoModelForCausalLM.from_pretrained(hf_model_str)
         self.generator = pipeline(
-            'text-generation', model=hf_model_str, device=device, return_tensors=True, return_full_text=return_full_text
-        ) # device_map="auto"
-        self.max_length = 30
+            'text-generation', model=hf_model_str, device=device, return_tensors=True) 
+        self.max_length = max_length
         self.device = device
 
-    def generate_batch(self, prompt, num_to_generate):
+    def _generate_batch_for_prompt(self, prompt, num_to_generate, labels=None):
         sequences = self.generator(prompt, max_length=self.max_length, num_return_sequences=num_to_generate)
-        #print(prompt, sequences)
         sequences = torch.tensor([sequence['generated_token_ids'] for sequence in sequences], device=self.device)
-        cond_probs = self.cond_probs(sequences)
+        cond_probs = self.cond_probs(sequences, labels)
         decoded = self.decode(sequences)
         return sequences, cond_probs, decoded
         # TODO: Make torch Batch object
+    
+    def generate_batch_for_prompts(self, prompts, num_to_generate):
+        sequences = []
+        log_likelihoods = []
+        for prompt in prompts:
+            _, sequence_lls, sequence_dec = self._generate_batch_for_prompt(prompt, num_to_generate)
+            sequences.append(sequence_dec)
+            log_likelihood = sequence_lls.amax(-1).sum(-1)
+            log_likelihoods.append(log_likelihood)
+        log_likelihoods = torch.stack(log_likelihoods)
+        return sequences, log_likelihoods
+    
+    def generate_prompt(self, context: str, answers: List[str]) -> Tuple[str, str]:
+        """Generate prompt for question generation models.
+        """
+        answer = random.sample(answers, 1)  # Just take one answer.
+        return f"answer: {answer}. context: {context}"
 
-        # prompt_enc = self.generator.tokenizer(
-        #     prompt, padding=False, add_special_tokens=False, return_tensors='pt'
-        # ).to(self.generator.model.device)
-        # sequences = []
-        # cond_probs = []
-        # for _ in range(num_to_generate):
-        #     tokens = self.generator.model.generate(prompt_enc, max_new_tokens=50, return_dict_in_generate=True, output_scores=True)
-        #     sequences.append(tokens)
-        #     cond_probs.append(self.cond_probs(tokens))
-        # decoded = self.decode(sequences)
-        # return sequences, cond_probs, decoded
 
 
-    def logits(self, sequences):
+    def logits(self, sequences, labels=None):
+        if labels:
+            labels = self.generator.tokenizer(labels)
+            labels = torch.tensor(labels['input_ids']).to(sequences.device)
+            labels = labels.unsqueeze(0)
+            return self.generator.model(sequences, labels=labels).logits
         return self.generator.model(sequences).logits
 
-    def cond_probs(self, sequences):
-        return torch.nn.functional.log_softmax(self.logits(sequences), -1)
+    def cond_probs(self, sequences, labels=None):
+        return torch.nn.functional.log_softmax(self.logits(sequences, labels), -1)
 
     def decode(self, sequences):
         #print('23s', sequences)
