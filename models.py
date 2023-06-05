@@ -23,8 +23,9 @@ class FullPipeline(Module):
 
         # Generate questions and log-likelihoods with Red Team Model and feed into Language Model.
         prompts, red_lls, prompts_dec = self.red_team._generate_batch_for_prompt(question_generation_prompt_dec, 1, labels=question)
-        orig_lls = self.red_team_original.cond_probs(prompts, question)
-        sequences, lm_lls = self.lm.generate_batch_for_prompts(prompts_dec, num_to_generate)
+        with torch.no_grad():
+            orig_lls = self.red_team_original.cond_probs(prompts, question)
+            sequences, lm_lls = self.lm.generate_batch_for_prompts(prompts_dec, num_to_generate)
         return prompts_dec[0], sequences, lm_lls, red_lls, orig_lls
 
 
@@ -67,11 +68,11 @@ class DebertaMNLIModel(NLIModel):
 
 
 class HFLanguageModel():
-    def __init__(self, hf_model_str: str, return_full_text: bool = True, device: int = -1, max_length: int = 30) -> None:
+    def __init__(self, hf_model_str: str, return_full_text: bool = True, device: int = -1, max_length: int = 30, torch_dtype = None) -> None:
         # self.tokenizer = AutoTokenizer.from_pretrained(hf_model_str)
         # self.model = AutoModelForCausalLM.from_pretrained(hf_model_str)
         self.generator = pipeline(
-            'text-generation', model=hf_model_str, device=device, return_tensors=True) 
+            'text-generation', model=hf_model_str, device=device, return_tensors=True, torch_dtype=torch_dtype) 
         self.max_length = max_length
         self.device = device
 

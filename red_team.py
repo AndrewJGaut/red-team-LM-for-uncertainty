@@ -24,7 +24,7 @@ def train(train_iter, full_model, semantic_entropy, num_to_generate, learning_ra
         current_date = datetime.now()
         torch.save(model.state_dict(), f'{log_dir}/{current_date.isoformat()}.pt')
 
-    optimizer = torch.optim.Adam(filter(lambda p: p.requires_grad, full_model.red_team.generator.model.parameters()), lr=learning_rate)
+    optimizer = torch.optim.SGD(filter(lambda p: p.requires_grad, full_model.red_team.generator.model.parameters()), lr=learning_rate)
     writer = SummaryWriter()
 
     try:
@@ -58,6 +58,7 @@ def train(train_iter, full_model, semantic_entropy, num_to_generate, learning_ra
         save(writer.log_dir, full_model.red_team.generator.model)
 
 def test(test_iter, full_model, qa_metrics):
+    full_model.eval()
     writer = SummaryWriter()
     for i, instance in enumerate(tqdm(test_iter)):
         # Forward step
@@ -92,7 +93,7 @@ def main(
     """Train red team model to create prompts which produce uncertain outputs from language model.
     """
     # Parse language model classes.
-    language_model_pt = HFLanguageModel(language_model, False, device=0, max_length=60)
+    language_model_pt = HFLanguageModel(language_model, False, device=0, max_length=60, torch_dtype=torch.float16)
     red_team_model_pt = HFLanguageModel(red_team_model, device=0)
     if language_model == red_team_model:
         orig_model_pt = language_model_pt
