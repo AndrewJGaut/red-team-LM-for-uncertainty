@@ -131,7 +131,7 @@ if __name__ == '__main__':
         '--red-team-model',
         type=str,
         help="Huggingface string for red team model",
-        default='PrimeQA/t5-base-table-question-generator',
+        default='mrm8488/t5-base-finetuned-question-generation-ap',
     )
     parser.add_argument(
         '-nli',
