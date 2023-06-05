@@ -77,7 +77,7 @@ class HFLanguageModel():
         self.device = device
 
     def _generate_batch_for_prompt(self, prompt, num_to_generate, labels=None):
-        sequences = self.generator(prompt, max_length=self.max_length, num_return_sequences=num_to_generate)
+        sequences = self.generator(prompt, max_length=self.max_length, num_return_sequences=num_to_generate, num_beams=num_to_generate)
         sequences = torch.tensor([sequence['generated_token_ids'] for sequence in sequences], device=self.device)
         cond_probs = self.cond_probs(sequences, labels)
         decoded = self.decode(sequences)
