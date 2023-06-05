@@ -32,8 +32,8 @@ def train(train_iter, full_model, num_to_generate):
             optimizer.zero_grad()
 
             # Forward step
-            context, question, answers, _ = instance
-            sequences, lm_lls, red_lls, orig_lls = full_model(context, answers, num_to_generate)
+            context, real_question, answers, _ = instance
+            question, sequences, lm_lls, red_lls, orig_lls = full_model(context, answers, num_to_generate)
             
             # Get loss.
             entropy = semantic_entropy.compute(sequences, lm_lls).mean()
@@ -45,7 +45,8 @@ def train(train_iter, full_model, num_to_generate):
             optimizer.step()
 
             # Logging.
-            writer.add_text('train/Question', question, i)
+            writer.add_text('train/GeneratedQuestion', question, i)
+            writer.add_text('train/RealQuestion', reql_question, i)
             writer.add_scalar('train/Entropy', entropy.item(), i)
             writer.add_scalar('train/KL', kl.item(), i)
             writer.add_scalar('train/Loss', loss.item(), i)
@@ -58,8 +59,8 @@ def train(train_iter, full_model, num_to_generate):
 def test(test_iter, full_model, qa_metrics):
     for i, instance in enumerate(test_iter):
         # Forward step
-        context, question, answers, _ = instance
-        pred_answers, _, _, _ = full_model(context, answers, 1)
+        context, real_question, answers, _ = instance
+        question, pred_answers, _, _, _ = full_model(context, answers, 1)
         pred_answer = pred_answers[0]
 
         # Evalute and log metrics.
@@ -69,6 +70,8 @@ def test(test_iter, full_model, qa_metrics):
             writer.add_text(f'text/{metric}', val)
 
         # Logging.
+        writer.add_text('test/GeneratedQuestion', question, i)
+        writer.add_text('test/RealQuestion', real_question, i)
         writer.add_text('test/PredictedAnswer', pred_answer, i)
         writer.flush()
 

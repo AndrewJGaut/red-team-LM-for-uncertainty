@@ -24,7 +24,7 @@ class FullPipeline(Module):
         prompts, red_lls, prompts_dec = red_team._generate_batch_for_prompt(question_generation_prompt, 1)
         orig_lls = red_team_original.cond_probs(prompts)
         sequences, lm_lls = lm.generate_batch_for_prompts(prompts_dec, num_to_generate)
-        return sequences, lm_lls, red_lls, orig_lls
+        return prompts[0], sequences, lm_lls, red_lls, orig_lls
 
 
 
