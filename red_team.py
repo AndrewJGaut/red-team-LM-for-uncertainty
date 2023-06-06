@@ -57,25 +57,25 @@ def train(train_iter, full_model, semantic_entropy, num_to_generate, learning_ra
     finally:
         save(writer.log_dir, full_model.red_team.generator.model)
 
-def test(test_iter, full_model, qa_metrics):
+def test(test_iter, full_model, qa_metrics, red_team=True):
     full_model.eval()
     writer = SummaryWriter()
     for i, instance in enumerate(tqdm(test_iter)):
         # Forward step
         context, real_question, answers, _ = instance
-        question, pred_answers, _, _, _ = full_model(context, real_question, answers, 1)
+        question, pred_answers, _, _, _ = full_model(context, real_question, answers, 1, red_team)
         pred_answer = pred_answers[0][0]
 
         # Evalute and log metrics.
         for metric in qa_metrics:
             idx, val = metric.compute(pred_answer, answers)
-            writer.add_text(f'test/{metric}-Answer', answers[idx])
-            writer.add_scalar(f'text/{metric}', val)
+            writer.add_text(f'test-{red_team}/{metric}-Answer', answers[idx])
+            writer.add_scalar(f'test-{red_team}/{metric}', val)
 
         # Logging.
-        writer.add_text('test/GeneratedQuestion', question, i)
-        writer.add_text('test/RealQuestion', real_question, i)
-        writer.add_text('test/PredictedAnswer', pred_answer, i)
+        writer.add_text(f'test-{red_team}/GeneratedQuestion', question, i)
+        writer.add_text(f'test-{red_team}/RealQuestion', real_question, i)
+        writer.add_text(f'test-{red_team}/PredictedAnswer', pred_answer, i)
         writer.flush()
 
 def main(
@@ -115,7 +115,8 @@ def main(
         full_model.red_team.load_state_dict(torch.load(red_team_model_path))
     else:
         train(train_iter, full_model, semantic_entropy, semantic_entropy_m, learning_rate, alpha)
-    test(test_iter, full_model, [F1(), EM()])
+    test(test_iter, full_model, [F1(), EM()], True)
+    test(test_iter, full_model, [F1(), EM()], False)
 
 if __name__ == '__main__':
     parser = ArgumentParser(

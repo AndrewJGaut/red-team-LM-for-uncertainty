@@ -15,11 +15,14 @@ class FullPipeline(Module):
         self.red_team = red_team
         self.red_team_original = red_team_original
     
-    def forward(self, context, question, answers, num_to_generate):
+    def forward(self, context, question, answers, num_to_generate, use_red_team=True):
         """One forward pass over the whole model.
         """
         # Get prompt from context and answers.
-        question_generation_prompt_dec = self.red_team.generate_prompt(context, answers) 
+        if use_red_team:
+            question_generation_prompt_dec = self.red_team.generate_prompt(context, answers)
+        else:
+            question_generation_prompt_dec = self.red_team_original.generate_prompt(context, answers)
 
         # Generate questions and log-likelihoods with Red Team Model and feed into Language Model.
         prompts, red_lls, prompts_dec = self.red_team._generate_batch_for_prompt(question_generation_prompt_dec, 1, labels=question)
