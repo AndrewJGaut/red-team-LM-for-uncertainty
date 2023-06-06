@@ -112,7 +112,7 @@ def main(
     # Train and evaluate.
     full_model = FullPipeline(language_model_pt, red_team_model_pt, orig_model_pt)
     if path_to_red_team_model:
-        full_model.red_team.load_state_dict(torch.load(red_team_model_path))
+        full_model.red_team.generator.model.load_state_dict(torch.load(path_to_red_team_model))
     else:
         train(train_iter, full_model, semantic_entropy, semantic_entropy_m, learning_rate, alpha)
     test(test_iter, full_model, [F1(), EM()], True)
@@ -180,13 +180,13 @@ if __name__ == '__main__':
         '--dev-dataset-size',
         type=int,
         help="Number of (context, answer) pairs to use for dev",
-        default=100
+        default=1200
     )
     parser.add_argument(
         '--test-dataset-size',
         type=int,
         help="Number of (context, answer) pairs to use for test",
-        default=100
+        default=1200
     )
     args = parser.parse_args()
     main(
