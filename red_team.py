@@ -24,7 +24,7 @@ def train(train_iter, full_model, semantic_entropy, num_to_generate, learning_ra
         current_date = datetime.now()
         torch.save(model.state_dict(), f'{log_dir}/{current_date.isoformat()}.pt')
 
-    optimizer = torch.optim.SGD(filter(lambda p: p.requires_grad, full_model.red_team.generator.model.parameters()), lr=learning_rate)
+    optimizer = torch.optim.RMSprop(filter(lambda p: p.requires_grad, full_model.red_team.generator.model.parameters()), lr=learning_rate)
     writer = SummaryWriter()
 
     try:
@@ -162,7 +162,7 @@ if __name__ == '__main__':
         '--alpha',
         type=float,
         help="KL penalty factor",
-        default=2.5e6
+        default=1e8#2.5e7
     )
     parser.add_argument(
         '--semantic-entropy-m',
