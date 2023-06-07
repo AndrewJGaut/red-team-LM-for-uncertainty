@@ -1,4 +1,5 @@
 from argparse import ArgumentParser
+from collections import defaultdict
 from datetime import datetime
 import itertools
 import random
@@ -62,6 +63,7 @@ def test(test_iter, full_model, qa_metrics, red_team=True, writer=None):
     full_model.eval()
     if writer is None:
         writer = SummaryWriter()
+    qa_metric_results = defaultdict(list)
     for i, instance in enumerate(tqdm(test_iter)):
         # Forward step
         context, real_question, answers, _ = instance
@@ -71,10 +73,12 @@ def test(test_iter, full_model, qa_metrics, red_team=True, writer=None):
         # Evalute and log metrics.
         for metric in qa_metrics:
             idx, val = metric.compute(pred_answer, answers)
-            writer.add_text(f'test-{red_team}/{metric}-Answer', answers[idx])
-            writer.add_scalar(f'test-{red_team}/{metric}', val)
+            qa_metric_results[metric].append(val)
+            writer.add_text(f'test-{red_team}/{metric}-Answer', answers[idx], i)
 
         # Logging.
+        for qa_metric, vals in qa_metric_results.items():
+            writer.add_histogram(f'test-{red_team}/{metric}', vals)
         writer.add_text(f'test-{red_team}/GeneratedQuestion', question, i)
         writer.add_text(f'test-{red_team}/RealQuestion', real_question, i)
         writer.add_text(f'test-{red_team}/PredictedAnswer', pred_answer, i)
@@ -110,15 +114,30 @@ def main(
     train_iter = SQuAD1(split='train').header(num_train_instances) if num_train_instances else SQuAD1(split='train')
     test_iter = SQuAD1(split='train').header(num_test_instances) if num_test_instances else SQuAD1(split='train')
 
-
     # Train and evaluate.
     full_model = FullPipeline(language_model_pt, red_team_model_pt, orig_model_pt)
+
+    # Set up SummaryWriter.
     if path_to_red_team_model:
         log_dir = os.path.dirname(path_to_red_team_model)
         writer = SummaryWriter(log_dir, filename_suffix='test')
+    else:
+        logdir = f"lr={learning_rate}_SEm={semantic_entropy_m}_alpha={alpha}_lm={language_model}_red-team={red_team_model}"
+        writer = SummaryWriter(logdir)
+    writer.add_hparams({
+        'learning_rate': learning_rate,
+        'semantic_entropy_m': semantic_entopy_m,
+        'alpha': alpha,
+        'language_model': language_model,
+        'red_team_model': red_team_model,
+        'nli_model': nli_model,
+        'path_to_red_team_model': path_to_red_team_model
+    })
+
+    # Train and evaluate.
+    if path_to_red_team_model:
         full_model.red_team.generator.model.load_state_dict(torch.load(path_to_red_team_model))
     else:
-        writer = SummaryWriter()
         train(train_iter, full_model, semantic_entropy, semantic_entropy_m, learning_rate, alpha, writer)
     test(test_iter, full_model, [F1(), EM()], True, writer)
     test(test_iter, full_model, [F1(), EM()], False, writer)
