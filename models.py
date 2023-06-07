@@ -90,7 +90,8 @@ class HFLanguageModel():
 
     def _generate_batch_for_prompt(self, prompt, num_to_generate, labels=None):
         input_ids = self.tokenizer(prompt, return_tensors='pt').input_ids
-        sequences = self.model(inputs, do_sample=True, top_p=0.95)
+        labels = self._prepare_labels()
+        sequences = self.model(inputs, labels=labels)
         cond_probs = self.cond_probs(sequences, labels)
         decoded = self.tokenizer.batch_decode(gen_tokens[:, input_ids.shape[1]:])
         return sequences, cond_probs, decoded
@@ -113,13 +114,16 @@ class HFLanguageModel():
         answer = random.sample(answers, 1)[0]  # Just take one answer.
         return f"answer: {answer}. context: {context}"
 
-
-
-    def logits(self, sequences, labels=None):
+    def _prepare_labels(labels=None):
         if labels:
             labels = self.tokenizer(labels)
             labels = torch.tensor(labels['input_ids']).to(sequences.device)
             labels = labels.unsqueeze(0)
+        return labels
+
+
+
+    def logits(self, sequences, labels=None)
         return self.model(sequences, labels=labels).logits
 
     def cond_probs(self, sequences, labels=None):
