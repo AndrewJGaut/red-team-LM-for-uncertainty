@@ -84,19 +84,16 @@ class DebertaMNLIModel(NLIModel):
 
 class HFLanguageModel():
     def __init__(self, hf_model_str: str, return_full_text: bool = False, device: int = -1, max_length: int = 30, torch_dtype = None) -> None:
-        # self.tokenizer = AutoTokenizer.from_pretrained(hf_model_str)
-        # self.model = AutoModelForCausalLM.from_pretrained(hf_model_str)
-        self.generator = pipeline(
-            'text-generation', model=hf_model_str, device=device, return_tensors=True, torch_dtype=torch_dtype) 
-        self.max_length = max_length
+        self.tokenizer = AutoTokenizer.from_pretrained(hf_model_str)
+        self.model = AutoModelForCausalLM.from_pretrained(hf_model_str)
+        self.model.to(device)
         self.device = device
 
     def _generate_batch_for_prompt(self, prompt, num_to_generate, labels=None):
-        sequences = self.generator(prompt, num_return_sequences=num_to_generate, num_beams=num_to_generate)
-        sequences = torch.tensor([sequence['generated_token_ids'] for sequence in sequences], device=self.device)
+        input_ids = self.tokenizer(prompt, return_tensors='pt').input_ids
+        sequences = self.model(inputs, do_sample=True, top_p=0.95)
         cond_probs = self.cond_probs(sequences, labels)
-        decoded = self.decode(sequences)
-        breakpoint()
+        decoded = self.tokenizer.batch_decode(gen_tokens[:, input_ids.shape[1]:])
         return sequences, cond_probs, decoded
         # TODO: Make torch Batch object
     
@@ -121,11 +118,10 @@ class HFLanguageModel():
 
     def logits(self, sequences, labels=None):
         if labels:
-            labels = self.generator.tokenizer(labels)
+            labels = self.tokenizer(labels)
             labels = torch.tensor(labels['input_ids']).to(sequences.device)
             labels = labels.unsqueeze(0)
-            return self.generator.model(sequences, labels=labels).logits
-        return self.generator.model(sequences).logits
+        return self.model(sequences, labels=labels).logits
 
     def cond_probs(self, sequences, labels=None):
         return torch.nn.functional.log_softmax(self.logits(sequences, labels), -1)
@@ -133,7 +129,7 @@ class HFLanguageModel():
     def decode(self, sequences):
         #print('23s', sequences)
         return [
-            self.generator.tokenizer.decode(sequence, skip_special_tokens=True, clean_up_tokenization_spaces=True)
+            self.tokenizer.decode(sequence, skip_special_tokens=True, clean_up_tokenization_spaces=True)
             for sequence in sequences
         ]
 

@@ -26,7 +26,7 @@ def train(train_iter, full_model, semantic_entropy, num_to_generate, learning_ra
         current_date = datetime.now()
         torch.save(model.state_dict(), f'{log_dir}/{current_date.isoformat()}.pt')
 
-    optimizer = torch.optim.RMSprop(filter(lambda p: p.requires_grad, full_model.red_team.generator.model.parameters()), lr=learning_rate)
+    optimizer = torch.optim.RMSprop(filter(lambda p: p.requires_grad, full_model.red_team.model.parameters()), lr=learning_rate)
     if writer is None:
         writer = SummaryWriter()
     try:
@@ -55,9 +55,9 @@ def train(train_iter, full_model, semantic_entropy, num_to_generate, learning_ra
             writer.add_scalar('train/Loss', loss.item(), i)
             writer.flush()
             if i % (len(train_iter) // 1000) == 0:
-                save(writer.log_dir, full_model.red_team.generator.model)
+                save(writer.log_dir, full_model.red_team.model)
     finally:
-        save(writer.log_dir, full_model.red_team.generator.model)
+        save(writer.log_dir, full_model.red_team.model)
 
 def test(test_iter, full_model, qa_metrics, red_team=True, writer=None):
     full_model.eval()  # Put model in eval mode.
@@ -65,6 +65,9 @@ def test(test_iter, full_model, qa_metrics, red_team=True, writer=None):
     # Set up writer.
     if writer is None:
         writer = SummaryWriter()
+
+    # Set up metrics.
+    qa_metric_results = defaultdict(list)
 
     # For clean logging
     if red_team:
@@ -82,10 +85,12 @@ def test(test_iter, full_model, qa_metrics, red_team=True, writer=None):
         # Evalute and log metrics.
         for metric in qa_metrics:
             idx, val = metric.compute(pred_answer, answers)
-            writer.add_scalar(f'test-{red_team_str}/{metric}', val, i)
+            qa_metric_results[metric].append(val)
             writer.add_text(f'test-{red_team}/{metric}-Answer', answers[idx], i)
 
         # Logging.
+        for qa_metric, vals in qa_metric_results.items():
+            writer.add_histogram(f'test-{red_team_str}/{metric}', vals)
         writer.add_text(f'test-{red_team_str}/GeneratedQuestion', question, i)
         writer.add_text(f'test-{red_team_str}/RealQuestion', real_question, i)
         writer.add_text(f'test-{red_team_str}/PredictedAnswer', pred_answer, i)
@@ -134,7 +139,7 @@ def main(
 
     # Train and evaluate.
     if path_to_red_team_model:
-        full_model.red_team.generator.model.load_state_dict(torch.load(path_to_red_team_model))
+        full_model.red_team.model.load_state_dict(torch.load(path_to_red_team_model))
     else:
         train(train_iter, full_model, semantic_entropy, semantic_entropy_m, learning_rate, alpha, writer)
     test(test_iter, full_model, [F1(), EM()], True, writer)
@@ -208,7 +213,7 @@ if __name__ == '__main__':
         '--test-dataset-size',
         type=int,
         help="Number of (context, answer) pairs to use for test",
-        default=3
+        default=1200
     )
     args = parser.parse_args()
     main(
