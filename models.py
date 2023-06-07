@@ -5,26 +5,15 @@ from torch.nn import Module
 from transformers import AutoModelForSequenceClassification, AutoModelForCausalLM, AutoTokenizer, pipeline
 from typing import List, Tuple
 
-FEW_SHOT_PROMPT="""
-Passage: At the 52nd Annual Grammy Awards, Beyoncé received ten nominations, including Album of the Year for I Am... Sasha Fierce, Record of the Year for "Halo", and Song of the Year for "Single Ladies (Put a Ring on It)", among others. She tied with Lauryn Hill for most Grammy nominations in a single year by a female artist. In 2010, Beyoncé was featured on Lady Gaga's single "Telephone" and its music video. The song topped the US Pop Songs chart, becoming the sixth number-one for both Beyoncé and Gaga, tying them with Mariah Carey for most number-ones since the Nielsen Top 40 airplay chart launched in 1992. "Telephone" received a Grammy Award nomination for Best Pop Collaboration with Vocals.
-Question: How many awards was Beyonce nominated for at the 52nd Grammy Awards?
-Answer: ten
-
-Passage: In 2007 the European Court of Human Rights (ECHR), noted in its judgement on Jorgic v. Germany case that in 1992 the majority of legal scholars took the narrow view that "intent to destroy" in the CPPCG meant the intended physical-biological destruction of the protected group and that this was still the majority opinion. But the ECHR also noted that a minority took a broader view and did not consider biological-physical destruction was necessary as the intent to destroy a national, racial, religious or ethnic group was enough to qualify as genocide.
-Question: What form of destruction was considered too limited by a smaller group of experts?
-Answer: biological-physical
-
-Passage: Before the release of iOS 5, the iPod branding was used for the media player included with the iPhone and iPad, a combination of the Music and Videos apps on the iPod Touch. As of iOS 5, separate apps named "Music" and "Videos" are standardized across all iOS-powered products. While the iPhone and iPad have essentially the same media player capabilities as the iPod line, they are generally treated as separate products. During the middle of 2010, iPhone sales overtook those of the iPod.
-Question: In what year did iPhone sales surpass those of iPods?
-Answer: 2010
+FEW_SHOT_PROMPT="""passage: Before the release of iOS 5, the iPod branding was used for the media player included with the iPhone and iPad, a combination of the Music and Videos apps on the iPod Touch. As of iOS 5, separate apps named "Music" and "Videos" are standardized across all iOS-powered products. While the iPhone and iPad have essentially the same media player capabilities as the iPod line, they are generally treated as separate products. During the middle of 2010, iPhone sales overtook those of the iPod.\nquestion: In what year did iPhone sales surpass those of iPods?\nanswer: 2010
 """
 
-def generate_prompt_for_lm(context, question, few_shot_prompt=FEW_SHOT_PROMPT):
-    return f"""
-    {few_shot_prompt}
-    Passage: {context}
-    Question: {question}
-    Answer: """
+def generate_prompt_for_lm(context, questions, few_shot_prompt=FEW_SHOT_PROMPT):
+    lm_prompts = list()
+    for question in questions:
+        lm_prompts.append(f"{few_shot_prompt}\npassage: {context}\n{question}\nanswer: "
+        )
+    return lm_prompts
 
 
 class FullPipeline(Module):
@@ -46,12 +35,14 @@ class FullPipeline(Module):
             question_generation_prompt_dec = self.red_team_original.generate_prompt(context, answers)
 
         # Generate questions and log-likelihoods with Red Team Model and feed into Language Model.
-        prompt_for_lm = generate_prompt_for_lm(context, question_generation_prompt_dec)
-        prompts, red_lls, prompts_dec = self.red_team._generate_batch_for_prompt(prompt_for_lm, 1, labels=question)
+        generated_questions, red_lls, generated_questions_dec = self.red_team._generate_batch_for_prompt(question_generation_prompt_dec, 1, labels=question)
+        lm_prompts_dec = generate_prompt_for_lm(context, generated_questions_dec)
+
         with torch.no_grad():
-            orig_lls = self.red_team_original.cond_probs(prompts, question)
-            sequences, lm_lls = self.lm.generate_batch_for_prompts(prompts_dec, num_to_generate)
-        return prompts_dec[0], sequences, lm_lls, red_lls, orig_lls
+            orig_lls = self.red_team_original.cond_probs(generated_questions, question)
+            sequences, lm_lls = self.lm.generate_batch_for_prompts(lm_prompts_dec, num_to_generate)
+        breakpoint()
+        return questions_dec[0], sequences, lm_lls, red_lls, orig_lls
 
 
 """Abstract base class"""
@@ -92,7 +83,7 @@ class DebertaMNLIModel(NLIModel):
 
 
 class HFLanguageModel():
-    def __init__(self, hf_model_str: str, return_full_text: bool = True, device: int = -1, max_length: int = 30, torch_dtype = None) -> None:
+    def __init__(self, hf_model_str: str, return_full_text: bool = False, device: int = -1, max_length: int = 30, torch_dtype = None) -> None:
         # self.tokenizer = AutoTokenizer.from_pretrained(hf_model_str)
         # self.model = AutoModelForCausalLM.from_pretrained(hf_model_str)
         self.generator = pipeline(
@@ -101,10 +92,11 @@ class HFLanguageModel():
         self.device = device
 
     def _generate_batch_for_prompt(self, prompt, num_to_generate, labels=None):
-        sequences = self.generator(prompt, max_length=self.max_length, num_return_sequences=num_to_generate, num_beams=num_to_generate)
+        sequences = self.generator(prompt, num_return_sequences=num_to_generate, num_beams=num_to_generate)
         sequences = torch.tensor([sequence['generated_token_ids'] for sequence in sequences], device=self.device)
         cond_probs = self.cond_probs(sequences, labels)
         decoded = self.decode(sequences)
+        breakpoint()
         return sequences, cond_probs, decoded
         # TODO: Make torch Batch object
     
@@ -122,7 +114,7 @@ class HFLanguageModel():
     def generate_prompt(self, context: str, answers: List[str]) -> Tuple[str, str]:
         """Generate prompt for question generation models.
         """
-        answer = random.sample(answers, 1)  # Just take one answer.
+        answer = random.sample(answers, 1)[0]  # Just take one answer.
         return f"answer: {answer}. context: {context}"
 
 
