@@ -60,10 +60,22 @@ def train(train_iter, full_model, semantic_entropy, num_to_generate, learning_ra
         save(writer.log_dir, full_model.red_team.generator.model)
 
 def test(test_iter, full_model, qa_metrics, red_team=True, writer=None):
-    full_model.eval()
+    full_model.eval()  # Put model in eval mode.
+
+    # Set up writer.
     if writer is None:
         writer = SummaryWriter()
+
+    # Set up metrics.
     qa_metric_results = defaultdict(list)
+
+    # For clean logging
+    if red_team:
+        red_team_str = "red-team"
+    else:
+        red_team_str = "original"
+    red_team_str = 'with-' + red_team_str
+
     for i, instance in enumerate(tqdm(test_iter)):
         # Forward step
         context, real_question, answers, _ = instance
@@ -78,10 +90,10 @@ def test(test_iter, full_model, qa_metrics, red_team=True, writer=None):
 
         # Logging.
         for qa_metric, vals in qa_metric_results.items():
-            writer.add_histogram(f'test-{red_team}/{metric}', vals)
-        writer.add_text(f'test-{red_team}/GeneratedQuestion', question, i)
-        writer.add_text(f'test-{red_team}/RealQuestion', real_question, i)
-        writer.add_text(f'test-{red_team}/PredictedAnswer', pred_answer, i)
+            writer.add_histogram(f'test-{red_team_str}/{metric}', vals)
+        writer.add_text(f'test-{red_team_str}/GeneratedQuestion', question, i)
+        writer.add_text(f'test-{red_team_str}/RealQuestion', real_question, i)
+        writer.add_text(f'test-{red_team_str}/PredictedAnswer', pred_answer, i)
         writer.flush()
 
 def main(
@@ -126,7 +138,7 @@ def main(
         writer = SummaryWriter(logdir)
     writer.add_hparams({
         'learning_rate': learning_rate,
-        'semantic_entropy_m': semantic_entopy_m,
+        'semantic_entropy_m': semantic_entropy_m,
         'alpha': alpha,
         'language_model': language_model,
         'red_team_model': red_team_model,
