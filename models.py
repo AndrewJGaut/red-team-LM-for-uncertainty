@@ -41,7 +41,7 @@ class FullPipeline(Module):
         with torch.no_grad():
             orig_lls = self.red_team_original.cond_probs(generated_questions, question)
             sequences, lm_lls = self.lm.generate_batch_for_prompts(lm_prompts_dec, num_to_generate)
-        return questions_dec[0], sequences, lm_lls, red_lls, orig_lls
+        return generated_questions_dec[0], sequences, lm_lls, red_lls, orig_lls
 
 
 """Abstract base class"""
@@ -82,18 +82,22 @@ class DebertaMNLIModel(NLIModel):
 
 
 class HFLanguageModel():
-    def __init__(self, hf_model_str: str, device: int = -1, torch_dtype = None, auto_model=None) -> None:
+    def __init__(self, hf_model_str: str, device: int = -1, torch_dtype = None, auto_model=None, exclude_prompt=True) -> None:
         self.tokenizer = AutoTokenizer.from_pretrained(hf_model_str)
         self.model = auto_model.from_pretrained(hf_model_str, torch_dtype=torch_dtype)
         self.model.to(device)
         self.device = device
+        self.exclude_prompt = exclude_prompt
 
     def _generate_batch_for_prompt(self, prompt, num_to_generate, labels=None):
         input_ids = self.tokenizer(prompt, return_tensors='pt').input_ids
-        labels = self._prepare_labels()
-        sequences = self.model(inputs, labels=labels)
-        cond_probs = self.cond_probs(sequences, labels)
-        decoded = self.tokenizer.batch_decode(gen_tokens[:, input_ids.shape[1]:])
+        sequences = self.model.generate(input_ids.to(self.device), max_new_tokens=496) 
+        cond_probs = self.cond_probs(sequences, labels) 
+        if self.exclude_prompt:
+            decoded = self.tokenizer.batch_decode(sequences[:, input_ids.shape[1]:])
+        else:
+            decoded = self.tokenizer.batch_decode(sequences)
+        breakpoint()
         return sequences, cond_probs, decoded
         # TODO: Make torch Batch object
     
@@ -114,16 +118,17 @@ class HFLanguageModel():
         answer = random.sample(answers, 1)[0]  # Just take one answer.
         return f"answer: {answer}. context: {context}"
 
-    def _prepare_labels(labels=None):
+    def _prepare_labels(self, labels=None):
         if labels:
             labels = self.tokenizer(labels)
-            labels = torch.tensor(labels['input_ids']).to(sequences.device)
+            labels = torch.tensor(labels['input_ids']).to(self.device)
             labels = labels.unsqueeze(0)
         return labels
 
 
 
-    def logits(self, sequences, labels=None)
+    def logits(self, sequences, labels=None):
+        labels = self._prepare_labels(labels)
         return self.model(sequences, labels=labels).logits
 
     def cond_probs(self, sequences, labels=None):

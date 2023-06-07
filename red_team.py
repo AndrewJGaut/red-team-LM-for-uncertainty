@@ -1,5 +1,6 @@
 from argparse import ArgumentParser
 from collections import defaultdict
+import csv
 from datetime import datetime
 import itertools
 import random
@@ -92,11 +93,10 @@ def test(test_iter, full_model, qa_metrics, red_team=True, writer=None):
             for metric in qa_metrics:
                 idx, val = metric.compute(pred_answer, answers)
                 qa_metric_results[metric].append(val)
+                writer.add_scalar(f'test-{red_team_str}/{metric}', val, i)
                 writer.add_text(f'test-{red_team}/{metric}-Answer', answers[idx], i)
 
             # Logging.
-            for qa_metric, vals in qa_metric_results.items():
-                writer.add_histogram(f'test-{red_team_str}/{metric}', vals)
             writer.add_text(f'test-{red_team_str}/GeneratedQuestion', question, i)
             writer.add_text(f'test-{red_team_str}/RealQuestion', real_question, i)
             writer.add_text(f'test-{red_team_str}/PredictedAnswer', pred_answer, i)
@@ -119,12 +119,12 @@ def main(
     """Train red team model to create prompts which produce uncertain outputs from language model.
     """
     # Parse language model classes.
-    language_model_pt = HFLanguageModel(language_model, device=0, torch_dtype=torch.float16, auto_model=AutoModelForCausalLM)
-    red_team_model_pt = HFLanguageModel(red_team_model, device=0, auto_model=AutoModelWithLMHead)
+    language_model_pt = HFLanguageModel(language_model, device=0, torch_dtype=torch.float16, auto_model=AutoModelForCausalLM, exclude_prompt=True)
+    red_team_model_pt = HFLanguageModel(red_team_model, device=0, auto_model=AutoModelWithLMHead, exclude_prompt=False)
     if language_model == red_team_model:
         orig_model_pt = language_model_pt
     else:
-        orig_model_pt = HFLanguageModel(red_team_model, device=0, auto_model=AutoModelWithLMHead)
+        orig_model_pt = HFLanguageModel(red_team_model, device=0, auto_model=AutoModelWithLMHead, exclude_prompt=False)
 
     # Parse metric classes
     nli_model_pt = _all_subclasses_mapping(NLIModel)[nli_model]()
