@@ -2,6 +2,7 @@ from argparse import ArgumentParser
 from datetime import datetime
 import itertools
 import random
+import os
 import torch
 from torch.utils.tensorboard import SummaryWriter
 import torchdata
@@ -17,7 +18,7 @@ def _all_subclasses_mapping(cls):
         return {cls}.union(s for c in cls.__subclasses__() for s in _all_subclasses(c))
     return {m.__name__: m for m in _all_subclasses(cls)}
 
-def train(train_iter, full_model, semantic_entropy, num_to_generate, learning_rate, alpha):
+def train(train_iter, full_model, semantic_entropy, num_to_generate, learning_rate, alpha, writer=None):
     """Run training.
     """
     def save(log_dir, model):
@@ -25,8 +26,8 @@ def train(train_iter, full_model, semantic_entropy, num_to_generate, learning_ra
         torch.save(model.state_dict(), f'{log_dir}/{current_date.isoformat()}.pt')
 
     optimizer = torch.optim.RMSprop(filter(lambda p: p.requires_grad, full_model.red_team.generator.model.parameters()), lr=learning_rate)
-    writer = SummaryWriter()
-
+    if writer is None:
+        writer = SummaryWriter()
     try:
         for i, instance in enumerate(tqdm(train_iter)):
             # Zero gradients
@@ -52,14 +53,15 @@ def train(train_iter, full_model, semantic_entropy, num_to_generate, learning_ra
             writer.add_scalar('train/KL', kl.item(), i)
             writer.add_scalar('train/Loss', loss.item(), i)
             writer.flush()
-            if i % len(train_iter) // 50 == 0:
+            if i % (len(train_iter) // 50) == 0:
                 save(writer.log_dir, full_model.red_team.generator.model)
     finally:
         save(writer.log_dir, full_model.red_team.generator.model)
 
-def test(test_iter, full_model, qa_metrics, red_team=True):
+def test(test_iter, full_model, qa_metrics, red_team=True, writer=None):
     full_model.eval()
-    writer = SummaryWriter()
+    if writer is None:
+        writer = SummaryWriter()
     for i, instance in enumerate(tqdm(test_iter)):
         # Forward step
         context, real_question, answers, _ = instance
@@ -112,11 +114,14 @@ def main(
     # Train and evaluate.
     full_model = FullPipeline(language_model_pt, red_team_model_pt, orig_model_pt)
     if path_to_red_team_model:
+        log_dir = os.path.dirname(path_to_red_team_model)
+        writer = SummaryWriter(log_dir, filename_suffix='test')
         full_model.red_team.generator.model.load_state_dict(torch.load(path_to_red_team_model))
     else:
-        train(train_iter, full_model, semantic_entropy, semantic_entropy_m, learning_rate, alpha)
-    test(test_iter, full_model, [F1(), EM()], True)
-    test(test_iter, full_model, [F1(), EM()], False)
+        writer = SummaryWriter()
+        train(train_iter, full_model, semantic_entropy, semantic_entropy_m, learning_rate, alpha, writer)
+    test(test_iter, full_model, [F1(), EM()], True, writer)
+    test(test_iter, full_model, [F1(), EM()], False, writer)
 
 if __name__ == '__main__':
     parser = ArgumentParser(
