@@ -54,7 +54,7 @@ def train(train_iter, full_model, semantic_entropy, num_to_generate, learning_ra
             writer.add_scalar('train/KL', kl.item(), i)
             writer.add_scalar('train/Loss', loss.item(), i)
             writer.flush()
-            if i % (len(train_iter) // 50) == 0:
+            if i % (len(train_iter) // 1000) == 0:
                 save(writer.log_dir, full_model.red_team.generator.model)
     finally:
         save(writer.log_dir, full_model.red_team.generator.model)
