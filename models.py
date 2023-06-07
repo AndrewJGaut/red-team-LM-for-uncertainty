@@ -2,7 +2,7 @@ from abc import ABC, abstractmethod
 import random
 import torch
 from torch.nn import Module
-from transformers import AutoModelForSequenceClassification, AutoModelForCausalLM, AutoTokenizer, pipeline
+from transformers import AutoModelForSequenceClassification, AutoModelWithLMHead, AutoModelForCausalLM, AutoTokenizer, pipeline
 from typing import List, Tuple
 
 FEW_SHOT_PROMPT="""passage: Before the release of iOS 5, the iPod branding was used for the media player included with the iPhone and iPad, a combination of the Music and Videos apps on the iPod Touch. As of iOS 5, separate apps named "Music" and "Videos" are standardized across all iOS-powered products. While the iPhone and iPad have essentially the same media player capabilities as the iPod line, they are generally treated as separate products. During the middle of 2010, iPhone sales overtook those of the iPod.\nquestion: In what year did iPhone sales surpass those of iPods?\nanswer: 2010
@@ -41,7 +41,6 @@ class FullPipeline(Module):
         with torch.no_grad():
             orig_lls = self.red_team_original.cond_probs(generated_questions, question)
             sequences, lm_lls = self.lm.generate_batch_for_prompts(lm_prompts_dec, num_to_generate)
-        breakpoint()
         return questions_dec[0], sequences, lm_lls, red_lls, orig_lls
 
 
@@ -83,9 +82,9 @@ class DebertaMNLIModel(NLIModel):
 
 
 class HFLanguageModel():
-    def __init__(self, hf_model_str: str, return_full_text: bool = False, device: int = -1, max_length: int = 30, torch_dtype = None) -> None:
+    def __init__(self, hf_model_str: str, device: int = -1, torch_dtype = None, auto_model=None) -> None:
         self.tokenizer = AutoTokenizer.from_pretrained(hf_model_str)
-        self.model = AutoModelForCausalLM.from_pretrained(hf_model_str)
+        self.model = auto_model.from_pretrained(hf_model_str, torch_dtype=torch_dtype)
         self.model.to(device)
         self.device = device
 

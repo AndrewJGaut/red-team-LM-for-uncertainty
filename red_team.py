@@ -9,6 +9,7 @@ from torch.utils.tensorboard import SummaryWriter
 import torchdata
 from torchtext.datasets import SQuAD1
 from tqdm import tqdm
+from transformers import AutoModelForSequenceClassification, AutoModelWithLMHead, AutoModelForCausalLM, AutoTokenizer, pipeline
 from typing import Optional
 
 from metrics import *
@@ -76,25 +77,32 @@ def test(test_iter, full_model, qa_metrics, red_team=True, writer=None):
         red_team_str = "original"
     red_team_str = 'with-' + red_team_str
 
-    for i, instance in enumerate(tqdm(test_iter)):
-        # Forward step
-        context, real_question, answers, _ = instance
-        question, pred_answers, _, _, _ = full_model(context, real_question, answers, 1, red_team)
-        pred_answer = pred_answers[0][0]
+    with open(os.path.join(writer.log_dir, f'test_{red_team=}.csv'), 'a') as f:
+        cw = csv.writer(f)
+        if f.tell() == 0:
+            cw.writerow(['GeneratedQuestion', 'RealQuestion', 'PredictedAnswer'])
 
-        # Evalute and log metrics.
-        for metric in qa_metrics:
-            idx, val = metric.compute(pred_answer, answers)
-            qa_metric_results[metric].append(val)
-            writer.add_text(f'test-{red_team}/{metric}-Answer', answers[idx], i)
+        for i, instance in enumerate(tqdm(test_iter)):
+            # Forward step
+            context, real_question, answers, _ = instance
+            question, pred_answers, _, _, _ = full_model(context, real_question, answers, 1, red_team)
+            pred_answer = pred_answers[0][0]
 
-        # Logging.
-        for qa_metric, vals in qa_metric_results.items():
-            writer.add_histogram(f'test-{red_team_str}/{metric}', vals)
-        writer.add_text(f'test-{red_team_str}/GeneratedQuestion', question, i)
-        writer.add_text(f'test-{red_team_str}/RealQuestion', real_question, i)
-        writer.add_text(f'test-{red_team_str}/PredictedAnswer', pred_answer, i)
-        writer.flush()
+            # Evalute and log metrics.
+            for metric in qa_metrics:
+                idx, val = metric.compute(pred_answer, answers)
+                qa_metric_results[metric].append(val)
+                writer.add_text(f'test-{red_team}/{metric}-Answer', answers[idx], i)
+
+            # Logging.
+            for qa_metric, vals in qa_metric_results.items():
+                writer.add_histogram(f'test-{red_team_str}/{metric}', vals)
+            writer.add_text(f'test-{red_team_str}/GeneratedQuestion', question, i)
+            writer.add_text(f'test-{red_team_str}/RealQuestion', real_question, i)
+            writer.add_text(f'test-{red_team_str}/PredictedAnswer', pred_answer, i)
+            writer.flush()
+            
+            cw.writerow([question, real_question, pred_answer])
 
 def main(
     language_model: str,
@@ -111,12 +119,12 @@ def main(
     """Train red team model to create prompts which produce uncertain outputs from language model.
     """
     # Parse language model classes.
-    language_model_pt = HFLanguageModel(language_model, False, device=0, max_length=60, torch_dtype=torch.float16)
-    red_team_model_pt = HFLanguageModel(red_team_model, device=0)
+    language_model_pt = HFLanguageModel(language_model, device=0, torch_dtype=torch.float16, auto_model=AutoModelForCausalLM)
+    red_team_model_pt = HFLanguageModel(red_team_model, device=0, auto_model=AutoModelWithLMHead)
     if language_model == red_team_model:
         orig_model_pt = language_model_pt
     else:
-        orig_model_pt = HFLanguageModel(red_team_model, False, 0)
+        orig_model_pt = HFLanguageModel(red_team_model, device=0, auto_model=AutoModelWithLMHead)
 
     # Parse metric classes
     nli_model_pt = _all_subclasses_mapping(NLIModel)[nli_model]()
