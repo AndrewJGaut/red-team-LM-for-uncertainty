@@ -66,9 +66,6 @@ def test(test_iter, full_model, qa_metrics, red_team=True, writer=None):
     if writer is None:
         writer = SummaryWriter()
 
-    # Set up metrics.
-    qa_metric_results = defaultdict(list)
-
     # For clean logging
     if red_team:
         red_team_str = "red-team"
@@ -85,12 +82,10 @@ def test(test_iter, full_model, qa_metrics, red_team=True, writer=None):
         # Evalute and log metrics.
         for metric in qa_metrics:
             idx, val = metric.compute(pred_answer, answers)
-            qa_metric_results[metric].append(val)
+            writer.add_scalar(f'test-{red_team_str}/{metric}', val, i)
             writer.add_text(f'test-{red_team}/{metric}-Answer', answers[idx], i)
 
         # Logging.
-        for qa_metric, vals in qa_metric_results.items():
-            writer.add_histogram(f'test-{red_team_str}/{metric}', vals)
         writer.add_text(f'test-{red_team_str}/GeneratedQuestion', question, i)
         writer.add_text(f'test-{red_team_str}/RealQuestion', real_question, i)
         writer.add_text(f'test-{red_team_str}/PredictedAnswer', pred_answer, i)
@@ -136,15 +131,6 @@ def main(
     else:
         logdir = f"lr={learning_rate}_SEm={semantic_entropy_m}_alpha={alpha}_lm={language_model}_red-team={red_team_model}"
         writer = SummaryWriter(logdir)
-    writer.add_hparams({
-        'learning_rate': learning_rate,
-        'semantic_entropy_m': semantic_entropy_m,
-        'alpha': alpha,
-        'language_model': language_model,
-        'red_team_model': red_team_model,
-        'nli_model': nli_model,
-        'path_to_red_team_model': path_to_red_team_model
-    })
 
     # Train and evaluate.
     if path_to_red_team_model:
@@ -222,7 +208,7 @@ if __name__ == '__main__':
         '--test-dataset-size',
         type=int,
         help="Number of (context, answer) pairs to use for test",
-        default=1200
+        default=3
     )
     args = parser.parse_args()
     main(
