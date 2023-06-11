@@ -47,6 +47,7 @@ def train(train_iter, full_model, semantic_entropy, num_to_generate, learning_ra
 
             # Backpropagation and update step
             loss.backward()
+            breakpoint()
             optimizer.step()
 
             # Logging.
@@ -197,7 +198,7 @@ if __name__ == '__main__':
         '--alpha',
         type=float,
         help="KL penalty factor",
-        default=1e8#2.5e7
+        default=0#1e8#2.5e7
     )
     parser.add_argument(
         '--semantic-entropy-m',

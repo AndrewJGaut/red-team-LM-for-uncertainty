@@ -5,6 +5,9 @@ from torch.nn import Module
 from transformers import AutoModelForSequenceClassification, AutoModelWithLMHead, AutoModelForCausalLM, AutoTokenizer, pipeline
 from typing import List, Tuple
 
+from undecorated import undecorated
+from types import MethodType
+
 FEW_SHOT_PROMPT="""passage: Before the release of iOS 5, the iPod branding was used for the media player included with the iPhone and iPad, a combination of the Music and Videos apps on the iPod Touch. As of iOS 5, separate apps named "Music" and "Videos" are standardized across all iOS-powered products. While the iPhone and iPad have essentially the same media player capabilities as the iPod line, they are generally treated as separate products. During the middle of 2010, iPhone sales overtook those of the iPod.\nquestion: In what year did iPhone sales surpass those of iPods?\nanswer: 2010
 """
 
@@ -35,11 +38,10 @@ class FullPipeline(Module):
 
         # Generate questions and log-likelihoods with Red Team Model and feed into Language Model.
         generated_questions, red_lls, generated_questions_dec = self.red_team._generate_batch_for_prompt(question_generation_prompt_dec, 1, labels=question)
-        lm_prompts_dec = generate_prompt_for_lm(context, generated_questions_dec)
-
-        with torch.no_grad():
-            orig_lls = self.red_team_original.cond_probs(generated_questions, question)
-            sequences, lm_lls = self.lm.generate_batch_for_prompts(lm_prompts_dec, num_to_generate)
+        #lm_prompts_dec = generate_prompt_for_lm(context, generated_questions_dec)
+        orig_lls = self.red_team_original.cond_probs(generated_questions.detach(), question)
+        sequences, lm_lls = self.lm.generate_batch_for_prompts(generated_questions, num_to_generate)
+        breakpoint()
         return generated_questions_dec[0], sequences, lm_lls, red_lls, orig_lls
 
 
@@ -89,14 +91,16 @@ class HFLanguageModel():
         self.exclude_prompt = exclude_prompt
 
     def _generate_batch_for_prompt(self, prompt, num_to_generate, labels=None):
-        input_ids = self.tokenizer(prompt, return_tensors='pt').input_ids
-        sequences = self.model.generate(input_ids.to(self.device), max_new_tokens=496) 
+        if type(prompt) is str:
+            input_ids = self.tokenizer(prompt, return_tensors='pt').input_ids
+        else:
+            input_ids = prompt.unsqueeze(0)
+        sequences = self.model.generate.__wrapped__(input_ids.to(self.device))
         cond_probs = self.cond_probs(sequences, labels) 
         if self.exclude_prompt:
-            decoded = self.tokenizer.batch_decode(sequences[:, input_ids.shape[1]:])
+            decoded = self.tokenizer.batch_decode(sequences.detach()[:, input_ids.shape[1]:])
         else:
-            decoded = self.tokenizer.batch_decode(sequences)
-        breakpoint()
+            decoded = self.tokenizer.batch_decode(sequences.detach())
         return sequences, cond_probs, decoded
         # TODO: Make torch Batch object
     
