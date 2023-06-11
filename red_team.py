@@ -28,7 +28,7 @@ def train(train_iter, full_model, semantic_entropy, num_to_generate, learning_ra
         current_date = datetime.now()
         torch.save(model.state_dict(), f'{log_dir}/{current_date.isoformat()}.pt')
 
-    optimizer = torch.optim.RMSprop(filter(lambda p: p.requires_grad, full_model.red_team.model.parameters()), lr=learning_rate)
+    optimizer = torch.optim.SGD(filter(lambda p: p.requires_grad, full_model.red_team.model.parameters()), lr=learning_rate)
     if writer is None:
         writer = SummaryWriter()
     try:
@@ -119,7 +119,7 @@ def main(
     """Train red team model to create prompts which produce uncertain outputs from language model.
     """
     # Parse language model classes.
-    language_model_pt = HFLanguageModel(language_model, device=0, torch_dtype=torch.float16, auto_model=AutoModelForCausalLM, exclude_prompt=True)
+    language_model_pt = HFLanguageModel(language_model, device=0, auto_model=AutoModelForCausalLM, exclude_prompt=True)
     red_team_model_pt = HFLanguageModel(red_team_model, device=0, auto_model=AutoModelWithLMHead, exclude_prompt=False)
     if language_model == red_team_model:
         orig_model_pt = language_model_pt
@@ -163,7 +163,7 @@ if __name__ == '__main__':
         '--language-model',
         type=str,
         help="Huggingface string for model that is being adversarially attacked by the red team model",
-        default='vvsotnikov/stablelm-tuned-alpha-3b-16bit',
+        default='EleutherAI/gpt-neo-125m'
     )
     parser.add_argument(
         '-rt',

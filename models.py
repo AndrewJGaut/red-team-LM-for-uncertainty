@@ -11,8 +11,7 @@ FEW_SHOT_PROMPT="""passage: Before the release of iOS 5, the iPod branding was u
 def generate_prompt_for_lm(context, questions, few_shot_prompt=FEW_SHOT_PROMPT):
     lm_prompts = list()
     for question in questions:
-        lm_prompts.append(f"{few_shot_prompt}\npassage: {context}\n{question}\nanswer: "
-        )
+        lm_prompts.append(f"{few_shot_prompt}\npassage: {context}\n{question}\nanswer: ")
     return lm_prompts
 
 
